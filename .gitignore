@@ -1,0 +1,10 @@
+projects/
+.selftest/
+conc-*/
+.mimosa/
+*.log
+dist/
+node_modules/
+同类产品调研报告-*.md
+Thumbs.db
+.DS_Store

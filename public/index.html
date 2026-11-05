@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>草图转 UI · ZCode 版</title>
+<style>
+:root{
+  --bg:#f2f4f8; --panel:#ffffff; --line:#e2e7ee; --ink:#2a3342; --ink2:#6b7686;
+  --accent:#4f6ef7; --accent2:#eef1ff; --danger:#e5484d; --ok:#2f9e6e; --warn:#c47f17;
+  --mono:Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:"Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);
+  display:grid;grid-template-rows:auto 1fr 230px;overflow:hidden}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;color:var(--ink)}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{filter:brightness(1.08);color:#fff}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input[type=text],select,textarea{font:inherit;border:1px solid var(--line);border-radius:8px;padding:5px 8px;color:var(--ink);background:#fff;width:100%}
+textarea{resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent2);border-color:var(--accent)}
+
+/* ===== 顶栏 ===== */
+#topbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+#topbar .logo{font-weight:700;font-size:15px;margin-right:6px;white-space:nowrap}
+#topbar .logo em{color:var(--accent);font-style:normal}
+.tb-group{display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:10px;background:#f7f9fc;border:1px solid var(--line)}
+.tb-group label{font-size:12px;color:var(--ink2);white-space:nowrap}
+#topbar input[type=text]{width:130px}
+#topbar select{width:auto}
+#targetDir{width:210px!important;font-family:var(--mono);font-size:12px}
+.spacer{flex:1}
+#engineState{font-size:12px;padding:3px 8px;border-radius:8px}
+#engineState.ok{background:#e6f6ee;color:var(--ok)}
+#engineState.bad{background:#fdeaea;color:var(--danger)}
+
+/* ===== 主区 ===== */
+#main{display:grid;grid-template-columns:176px 1fr 300px;min-height:0}
+#main.pal-min{grid-template-columns:22px 1fr 300px}
+#main.insp-min{grid-template-columns:176px 1fr 22px}
+#main.pal-min #palBody,#main.insp-min #inspector>*:not(.fold-btn){display:none}
+.fold-btn{position:absolute;top:4px;z-index:40;width:20px;height:22px;border:1px solid var(--line);
+  background:var(--panel);border-radius:6px;font-size:11px;color:var(--ink2);padding:0;cursor:pointer;line-height:1}
+.fold-btn:hover{color:var(--accent);border-color:var(--accent)}
+#palFold{right:5px}#inspFold{right:5px}
+#main.pal-min #palFold,#main.insp-min #inspFold{top:calc(50% - 11px)}
+#main.pal-min #palFold{right:1px}#main.insp-min #inspFold{left:1px}
+#palette,#inspector{position:relative}
+body.topbar-min #topbar .tb-group,body.topbar-min #topbar>button:not(#btnMinTop),body.topbar-min #topbar #engineState{display:none}
+body.topbar-min #topbar{padding:3px 12px}
+#palette{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:8px}
+#palette h4{font-size:12px;color:var(--ink2);margin:8px 2px 5px;font-weight:600}
+.pal-item{display:flex;align-items:center;gap:7px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;
+  margin-bottom:5px;background:#fff;cursor:grab;user-select:none;font-size:13px}
+.pal-item:hover{border-color:var(--accent);background:var(--accent2)}
+.pal-item .ic{width:16px;height:16px;flex:none;display:inline-block;border:1.5px solid #8894a6;border-radius:3px;background:#eef1f5}
+.pal-item .ic.f{background:#c9d6f5;border-color:#7f96d9}
+.pal-item .ic.dash{border-style:dashed;background:transparent}
+.pal-item .ic.round{border-radius:8px}
+
+#canvasArea{position:relative;overflow:auto;padding:26px;background:
+  repeating-conic-gradient(#eef1f5 0% 25%, #e6eaf0 0% 50%) 0 0/22px 22px}
+#frameHolder{position:relative;margin:0 auto;width:max-content}
+#frame{position:relative;background:#fff;box-shadow:0 4px 24px rgba(30,40,60,.18);transform-origin:0 0}
+#frame.empty-hint::after{content:"从左侧控件库点击或拖入控件开始设计";position:absolute;inset:0;display:flex;
+  align-items:center;justify-content:center;color:#aab4c2;font-size:14px;pointer-events:none}
+
+/* 元素 */
+.el{position:absolute;cursor:move;user-select:none;overflow:hidden;font-size:12px;color:#57657a}
+#frame.grid-on{background-image:linear-gradient(#dfe6ef 1px,transparent 1px),linear-gradient(90deg,#dfe6ef 1px,transparent 1px);background-size:8px 8px}
+#marquee{position:absolute;border:1px solid var(--accent);background:rgba(79,110,247,.08);pointer-events:none;z-index:9998}
+.inline-edit{position:absolute;inset:0;width:100%;height:100%;border:none;outline:2px solid var(--accent);font:inherit;color:inherit;background:#fff;text-align:center;padding:0 4px;border-radius:4px}
+body.pen-mode #frame{cursor:crosshair}
+.pal-item.tool-active{border-color:var(--accent);background:var(--accent2);color:var(--accent);font-weight:600}
+.el.sel{outline:2px solid var(--accent);outline-offset:1px}
+.el .hd{position:absolute;left:0;right:0;bottom:0}
+/* 各控件外观 */
+.el.navbar{background:#3d4a5d;color:#fff;display:flex;align-items:center;justify-content:center;border-radius:6px 6px 0 0}
+.el.tabbar{background:#e8edf3;border-top:1.5px solid #b9c4d1;display:flex;align-items:center;justify-content:space-around}
+.el.tabbar .dot{width:8px;height:8px;border-radius:50%;background:#9fadc0}
+.el.button{background:#4f6ef7;color:#fff;display:flex;align-items:center;justify-content:center;border-radius:8px;border:none}
+.el.badge{background:#e3ebff;color:#3a5ad9;border:1px solid #b9c9ff;display:inline-flex;align-items:center;justify-content:center;border-radius:999px}
+.el.text{color:#5c6a7e;background:transparent;border:none;line-height:1.3}
+.el.heading{color:#26303f;font-weight:700;background:transparent;border:none;line-height:1.2}
+.el.input,.el.textarea,.el.select{background:#fbfcfe;border:1.5px solid #c3cddb;border-radius:8px;display:flex;align-items:center;padding:0 10px;color:#93a1b3}
+.el.select{justify-content:space-between}
+.el.textarea{align-items:flex-start;padding-top:6px}
+.el.image{background:#edf1f6;border:1.5px dashed #aebac9;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#93a1b3;border-radius:6px}
+.el.card{background:#fff;border:1.5px solid #d4dce6;border-radius:10px;box-shadow:0 2px 6px rgba(40,50,70,.07);padding:8px}
+.el.container{border:1.5px dashed #b3bfce;border-radius:8px;color:#8b98a9;padding:6px}
+.el.listitem{display:flex;align-items:center;gap:9px;border:1.5px solid #d4dce6;border-radius:9px;padding:0 10px;background:#fff}
+.el.listitem .av{width:26px;height:26px;border-radius:50%;background:#dbe4f0;flex:none}
+.el.listitem .lns{flex:1}
+.el.listitem .ln{height:7px;border-radius:4px;background:#dde4ec;margin:4px 0}
+.el.listitem .ln.s{width:55%}
+.el.listitem .chv{color:#b6c1cf;font-size:14px}
+.el.switch{border-radius:999px;background:#cfd8e3;position:relative}
+.el.switch::after{content:"";position:absolute;right:3px;top:3px;width:calc(50% - 3px);height:calc(100% - 6px);border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.el.checkbox{display:flex;align-items:center;gap:7px;background:transparent;border:none;color:#57657a}
+.el.checkbox .bx{width:17px;height:17px;border:1.8px solid #9fadc0;border-radius:4px;background:#fff;flex:none;position:relative}
+.el.checkbox .bx::after{content:"✓";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--accent)}
+.el.tabs{display:flex;gap:4px;border-bottom:2px solid #e2e7ee;align-items:flex-end}
+.el.tabs span{padding:4px 10px;color:#8b98a9}
+.el.tabs span.on{color:var(--accent);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.el.table{border:1.5px solid #c3cddb;border-radius:6px;background:
+  linear-gradient(#0000 25%, #eef1f5 25% 50%, #0000 50% 75%, #eef1f5 75%),
+  linear-gradient(90deg,#c3cddb 1px,#0000 1px) 0 0/33.3% 100%,
+  linear-gradient(#c3cddb 1px,#0000 1px) 0 0/100% 25%;background-color:#fff;background-blend-mode:normal}
+.el.chart{background:#fbfcfe;border:1.5px solid #c3cddb;border-radius:8px;display:flex;align-items:flex-end;gap:8px;padding:8px 12px}
+.el.chart i{flex:1;background:#9fb4f0;border-radius:3px 3px 0 0;display:block}
+.el.divider{background:#c9d2dd;height:2px;border:none}
+.el.icon{border:1.5px solid #9fadc0;border-radius:8px;background:#eef1f5;display:flex;align-items:center;justify-content:center;color:#6b7686}
+
+/* 选中手柄 */
+.h{position:absolute;width:9px;height:9px;background:#fff;border:2px solid var(--accent);border-radius:2px;z-index:99}
+.h.nw{left:-5px;top:-5px;cursor:nwse-resize}.h.n{left:calc(50% - 4px);top:-5px;cursor:ns-resize}
+.h.ne{right:-5px;top:-5px;cursor:nesw-resize}.h.e{right:-5px;top:calc(50% - 4px);cursor:ew-resize}
+.h.se{right:-5px;bottom:-5px;cursor:nwse-resize}.h.s{left:calc(50% - 4px);bottom:-5px;cursor:ns-resize}
+.h.sw{left:-5px;bottom:-5px;cursor:nesw-resize}.h.w{left:-5px;top:calc(50% - 4px);cursor:ew-resize}
+
+/* ===== 检查器 ===== */
+#inspector{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+#inspector h3{font-size:13px;color:var(--ink2);font-weight:600;margin:4px 0 -4px}
+.panel-box{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fbfcfe}
+.panel-box .row{display:flex;gap:6px;margin-top:6px}
+.panel-box .row button{flex:1;font-size:12px;padding:4px 2px}
+#selMeta{font-size:12px;color:var(--ink2)}
+#elNotes{min-height:64px;font-size:12px}
+#globalReq{min-height:90px;font-size:12px}
+.style-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.style-grid label{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink2)}
+.style-grid input[type=number]{width:46px;padding:2px 4px;font-size:12px}
+.style-grid select{flex:1;padding:2px 4px;font-size:12px;width:auto}
+.style-grid input[type=color]{width:34px;height:22px;padding:0;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer}
+.field{margin-top:6px}
+.field label{display:block;font-size:12px;color:var(--ink2);margin-bottom:3px}
+#elList{max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+#elList .it{display:flex;gap:6px;align-items:center;padding:4px 8px;font-size:12px;border-bottom:1px solid #f0f3f7;cursor:pointer}
+#elList .it:hover{background:var(--accent2)}
+#elList .it.on{background:var(--accent2);color:var(--accent);font-weight:600}
+#elList .tag{font-size:10px;background:#eef1f5;border-radius:4px;padding:0 4px;color:#7a8698;flex:none}
+#elList .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#elList .nt{margin-left:auto;color:#9aa7b6;flex:none}#elList .nt.has{color:var(--warn)}
+.empty-tip{font-size:12px;color:#9aa7b6;padding:8px;text-align:center}
+
+/* ===== 控制台 ===== */
+#console{border-top:1px solid var(--line);background:#171d27;color:#c9d4e3;display:flex;flex-direction:column;min-height:0}
+body.with-preview{grid-template-rows:auto 1fr 500px}
+body.console-min{grid-template-rows:auto 1fr 34px!important}
+body.console-min #log,body.console-min #previewPanel{display:none!important}
+#previewPanel{display:none;border-bottom:1px solid #2a3342;min-height:0}
+body.with-preview #previewPanel{display:flex}
+#previewPanel .pv-left{flex:1.25;display:flex;flex-direction:column;min-width:0;border-right:1px solid #2a3342}
+#previewPanel .pv-head{display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:12px;background:#1c2430}
+#previewPanel iframe{flex:1;border:none;background:#fff;width:100%}
+#previewPanel .pv-right{flex:1;display:flex;flex-direction:column;padding:8px 10px;gap:6px;min-width:0}
+#previewPanel .pv-right h4{font-size:12px;color:#9db4d8;font-weight:600}
+#previewPanel textarea{background:#101620;border:1px solid #2a3342;color:#dbe5f0;min-height:74px;font-size:12px;border-radius:8px;padding:6px 8px;width:100%}
+#previewPanel .pv-ops{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#previewPanel .pv-ops label{font-size:12px;color:#9db4d8;display:flex;align-items:center;gap:4px;cursor:pointer}
+#console .bar{display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid #2a3342;font-size:12px}
+#console .bar .t{font-weight:600;color:#e7eef7}
+#jobStatus{padding:1px 8px;border-radius:8px;background:#2a3342;font-size:11px}
+#jobStatus.run{background:#31446e;color:#9db9ff}
+#jobStatus.done{background:#1e4d3a;color:#7fe0b6}
+#jobStatus.fail{background:#5b2626;color:#ff9e9e}
+#log{flex:1;overflow:auto;padding:8px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-all}
+#log .l-ai{color:#a9c4ff}
+#log .l-tool{color:#7fd4a8}
+#log .l-run{color:#7d8aa0}
+#log .l-err{color:#ff8f8f}
+#log .l-sys{color:#e0b467}
+#log .l-out{color:#aab6c8}
+#log .l-result{color:#8ef0c0;font-weight:600}
+
+#toast{position:fixed;left:50%;top:52px;transform:translateX(-50%);background:#232c3b;color:#fff;padding:8px 16px;
+  border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:999;max-width:70%}
+#toast.show{opacity:.95}
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <span class="logo">草图转<em>UI</em> · ZCode 版</span>
+
+  <div class="tb-group"><label>模板</label>
+    <select id="tplSel"></select>
+    <button id="btnTpl">应用</button>
+    <button id="btnBlank" title="清空画布，从零自由设计（保留当前画布尺寸）">空白画布</button>
+  </div>
+
+  <div class="tb-group"><label>画布</label>
+    <select id="frameSel">
+      <option value="phone">手机 390×844（竖）</option>
+      <option value="phone-land">手机 844×390（横）</option>
+      <option value="tablet">平板 834×1112（竖）</option>
+      <option value="tablet-land">平板 1112×834（横）</option>
+      <option value="desktop">桌面 1280×800</option>
+      <option value="custom">自定义…</option>
+    </select>
+    <span id="customDims" style="display:none;align-items:center;gap:3px">
+      <input type="number" id="cw" min="120" max="4000" style="width:64px" title="宽 px">
+      <span style="color:var(--ink2);font-size:12px">×</span>
+      <input type="number" id="ch" min="120" max="4000" style="width:64px" title="高 px">
+    </span>
+    <button id="btnRotate" title="横竖屏互换（交换宽高）">⟳ 横竖</button>
+  </div>
+
+  <div class="tb-group">
+    <button id="btnUndo" title="Ctrl+Z">↶ 撤销</button>
+    <button id="btnRedo" title="Ctrl+Y">↷ 重做</button>
+    <button id="btnDel" title="Del">删除</button>
+    <button id="btnSnap" title="对齐到 8px 网格">网格:开</button>
+  </div>
+
+  <div class="tb-group">
+    <button data-z="0.5">50%</button><button data-z="0.75">75%</button>
+    <button data-z="1">100%</button><button id="btnFit">适配</button>
+  </div>
+
+  <span class="spacer"></span>
+
+  <div class="tb-group"><label>项目名</label><input type="text" id="projName" value="我的界面"></div>
+  <div class="tb-group"><label>技术栈</label>
+    <select id="stackSel">
+      <option>纯 HTML/CSS/JS（单文件 index.html）</option>
+      <option>Vue 3（单文件，CDN 引入）</option>
+      <option>React 18（单文件，CDN 引入）</option>
+      <option>微信小程序（WXML/WXSS）</option>
+      <option>Flutter（Dart Widget）</option>
+    </select>
+  </div>
+  <div class="tb-group"><label>输出目录</label><input type="text" id="targetDir" placeholder="默认: projects/<项目名>"></div>
+  <button id="btnExport" title="只写出 sketch.png/json 与 REQUIREMENTS.md，不调用 ZCode">仅导出草图</button>
+  <button id="btnUisketch" title="导出 .uisketch 单文件：含全部布局/元素/标注/样式参数，可发进任意 ZCode 对话还原需求">导出 .uisketch</button>
+  <button id="btnOpenUisketch" title="打开 .uisketch 文件还原到画布">打开…</button>
+  <input type="file" id="uisketchFile" accept=".uisketch,.json" style="display:none">
+  <button id="btnCopyPrompt" title="复制组装好的提示词——粘贴进任意 ZCode 对话即可让该对话按草图生成">复制提示词</button>
+  <button id="btnSend" class="primary">发送给 ZCode 生成 →</button>
+  <span id="engineState">检测中…</span>
+  <button id="btnMinTop" title="收起顶栏（只留标题行），再点展开">收起 ⌃</button>
+</header>
+
+<div id="main">
+  <aside id="palette"><button class="fold-btn" id="palFold" title="收起/展开控件库">⟨</button></aside>
+  <section id="canvasArea"><div id="frameHolder"><div id="frame"></div></div></section>
+
+  <aside id="inspector"><button class="fold-btn" id="inspFold" title="收起/展开检查器">⟩</button>
+    <h3>选中元素</h3>
+    <div class="panel-box" id="selBox">
+      <div id="selMeta">未选中——点击画布中的控件</div>
+      <div class="field" id="labelField" style="display:none"><label>文字 / 占位</label><input type="text" id="elLabel"></div>
+      <div class="field" style="display:none" id="notesField"><label>用途与要求（ZCode 会逐条落实）</label>
+        <textarea id="elNotes" placeholder="例：点击后校验手机号格式，为空时抖动提示；成功跳转首页"></textarea></div>
+      <div class="row" id="zRow" style="display:none">
+        <button id="btnZUp">上移一层</button><button id="btnZDown">下移一层</button><button id="btnZTop">置顶</button><button id="btnDup">复制</button>
+      </div>
+      <div class="row" id="gRow" style="display:none">
+        <button id="btnGroup">组合</button><button id="btnUngroup">解组</button>
+      </div>
+    </div>
+
+    <h3>元素清单 <span id="elCount" style="font-weight:400"></span></h3>
+    <div id="elList"><div class="empty-tip">画布为空</div></div>
+
+    <h3>全局要求（页面用途 / 风格 / 补充说明）</h3>
+    <div class="panel-box">
+      <textarea id="globalReq" placeholder="例：这是一个宠物社区 App 的登录页，主色蓝紫渐变，圆角大按钮；手机号 11 位校验；需要记住密码勾选框"></textarea>
+    </div>
+
+    <h3>属性参数（作用于手绘笔与整体风格，随草图传给 ZCode）</h3>
+    <div class="panel-box" id="styleBox">
+      <div class="style-grid">
+        <label>线条粗细<input type="number" id="stWidth" min="1" max="12" step="0.5" value="2.5">px</label>
+        <label>线型<select id="stDash"><option value="solid">实线</option><option value="dashed">虚线</option><option value="dotted">点线</option></select></label>
+        <label>描边颜色<input type="color" id="stStroke" value="#3d4a5d"></label>
+        <label>填充颜色<input type="color" id="stFill" value="#ffffff"></label>
+        <label>主色调<input type="color" id="stPrimary" value="#4f6ef7"></label>
+        <label>形状风格<select id="stCorner"><option value="sharp">直角</option><option value="round" selected>圆角</option><option value="large">大圆角</option><option value="pill">胶囊</option></select></label>
+      </div>
+      <div class="field"><label>附加样式要求（可选）</label>
+        <input type="text" id="stExtra" placeholder="例：扁平化无阴影、极简留白、卡片带轻投影"></div>
+    </div>
+  </aside>
+</div>
+
+<footer id="console">
+  <div id="previewPanel">
+    <div class="pv-left">
+      <div class="pv-head"><strong>生成预览</strong><span id="pvDir" style="color:#7d8aa0"></span>
+        <span class="spacer"></span>
+        <button id="pvRefresh" style="font-size:12px;padding:2px 8px">刷新</button>
+        <button id="pvClose" style="font-size:12px;padding:2px 8px">收起</button>
+      </div>
+      <iframe id="pvFrame" title="生成预览" sandbox="allow-scripts allow-forms allow-popups allow-modals"></iframe>
+    </div>
+    <div class="pv-right">
+      <h4>对当前界面的反馈（ZCode 会续着上次会话修正）</h4>
+      <textarea id="refineText" placeholder="例：主按钮改成绿色渐变；表格加斑马纹；侧边栏加 Logo"></textarea>
+      <div class="pv-ops">
+        <label><input type="checkbox" id="refineCompare"> 附草图+截图自动比对返修</label>
+      </div>
+      <div class="pv-ops">
+        <button id="btnRefine" class="primary" style="flex:none">发送修正 →</button>
+        <span style="font-size:11px;color:#7d8aa0">修正期间日志见下方运行区</span>
+      </div>
+      <h4>界面图片导入（截图/手绘照片 → 解析成画布元素）</h4>
+      <div class="pv-ops">
+        <button id="btnImportImg" style="flex:none">选择图片解析…</button>
+        <input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp" style="display:none">
+        <span id="importHint" style="font-size:11px;color:#7d8aa0"></span>
+      </div>
+    </div>
+  </div>
+  <div class="bar">
+    <span class="t">运行日志</span><span id="jobStatus">空闲</span><span id="jobElapsed"></span>
+    <span class="spacer"></span>
+    <button id="btnShowPreview" style="font-size:12px;display:none">显示预览</button>
+    <button id="btnOpenDir" style="font-size:12px">打开输出目录</button>
+    <button id="btnStop" style="font-size:12px" disabled>停止</button>
+    <button id="btnMinConsole" style="font-size:12px" title="收起日志区，画布不再被遮挡">收起 ⌄</button>
+  </div>
+  <div id="log"><span class="l-run">等待操作——设计草图后点击右上角「发送给 ZCode 生成」。</span></div>
+</footer>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ================= 基础数据 ================= */
+const FRAMES = { phone:{w:390,h:844,label:'手机'}, tablet:{w:834,h:1112,label:'平板'}, desktop:{w:1280,h:800,label:'桌面'} };
+
+const TYPES = {
+  navbar:  {name:'顶部导航', w:0,  h:56,  cat:'布局'},
+  tabbar:  {name:'底部标签栏', w:0, h:64,  cat:'布局'},
+  container:{name:'区块容器', w:280,h:180, cat:'布局'},
+  card:    {name:'卡片',      w:240,h:140, cat:'布局'},
+  divider: {name:'分割线',    w:200,h:2,   cat:'布局'},
+  heading: {name:'标题',      w:200,h:38,  cat:'内容'},
+  text:    {name:'文本',      w:170,h:24,  cat:'内容'},
+  image:   {name:'图片',      w:170,h:120, cat:'内容'},
+  icon:    {name:'图标',      w:36, h:36,  cat:'内容'},
+  draw:    {name:'手绘笔',    w:80, h:60,  cat:'内容'},
+  listitem:{name:'列表项',    w:340,h:62,  cat:'内容'},
+  button:  {name:'按钮',      w:130,h:46,  cat:'控件'},
+  input:   {name:'输入框',    w:210,h:46,  cat:'控件'},
+  textarea:{name:'多行输入',  w:230,h:96,  cat:'控件'},
+  select:  {name:'下拉框',    w:190,h:46,  cat:'控件'},
+  checkbox:{name:'复选框',    w:120,h:32,  cat:'控件'},
+  switch:  {name:'开关',      w:52, h:30,  cat:'控件'},
+  badge:   {name:'徽章',      w:70, h:28,  cat:'控件'},
+  tabs:    {name:'标签页',    w:250,h:40,  cat:'数据'},
+  table:   {name:'表格',      w:310,h:160, cat:'数据'},
+  chart:   {name:'图表',      w:280,h:170, cat:'数据'},
+  progress:{name:'进度条',    w:180,h:14,  cat:'数据'},
+  slider:  {name:'滑块',      w:200,h:32,  cat:'控件'},
+  rating:  {name:'评分',      w:150,h:30,  cat:'控件'},
+  steps:   {name:'步骤条',    w:300,h:36,  cat:'数据'},
+  pagination:{name:'分页器',  w:220,h:36,  cat:'数据'},
+  avatar:  {name:'头像',      w:56, h:56,  cat:'内容'},
+  dialog:  {name:'弹窗',      w:300,h:180, cat:'反馈'},
+  toast:   {name:'轻提示',    w:240,h:40,  cat:'反馈'},
+  video:   {name:'播放器',    w:280,h:160, cat:'内容'},
+  map:     {name:'地图/小地图',w:200,h:200,cat:'游戏'},
+  joystick:{name:'虚拟摇杆',  w:110,h:110, cat:'游戏'},
+  skillbar:{name:'技能栏',    w:280,h:64,  cat:'游戏'},
+  hpbar:   {name:'角色血条',  w:220,h:54,  cat:'游戏'},
+  bosshbar:{name:'Boss血条',  w:420,h:56,  cat:'游戏'},
+  inventory:{name:'背包格子', w:168,h:84,  cat:'游戏'},
+  questtracker:{name:'任务追踪',w:200,h:96,cat:'游戏'},
+  cooldown:{name:'技能冷却',  w:48, h:48,  cat:'游戏'},
+  buffbar: {name:'Buff栏',    w:132,h:36,  cat:'游戏'},
+  partylist:{name:'组队列表', w:180,h:84,  cat:'游戏'},
+  crosshair:{name:'准星',     w:28, h:28,  cat:'游戏'},
+  dmgnumber:{name:'伤害数字', w:90, h:44,  cat:'游戏'},
+  killfeed:{name:'击杀播报',  w:190,h:52,  cat:'游戏'},
+  chatbox: {name:'聊天框',    w:200,h:110, cat:'游戏'},
+  currency:{name:'货币栏',    w:170,h:30,  cat:'游戏'},
+  pausemenu:{name:'暂停菜单', w:160,h:200, cat:'游戏'},
+  scoreboard:{name:'计分板',  w:220,h:64,  cat:'游戏'},
+  tutorialhint:{name:'教学提示',w:230,h:40,cat:'游戏'},
+  loadingbar:{name:'加载屏',  w:320,h:120, cat:'游戏'},
+};
+const CATS = {布局:'布局与骨架', 内容:'内容展示', 控件:'交互控件', 数据:'数据展示', 反馈:'反馈与覆盖层', 游戏:'游戏专用'};
+
+const HELP = {
+  navbar:'页面顶部的横向导航条，放标题/返回/菜单入口，宽度自动占满画布',
+  tabbar:'移动端底部的标签栏，用于主页面之间切换（首页/发现/我的）',
+  container:'虚线框区块，用来圈定一个功能区域（如侧边栏、轮播区），本身不显示内容',
+  card:'带圆角阴影的信息卡片，放一组相关信息（指标卡、内容卡）',
+  divider:'水平分割线，分隔两个内容区块',
+  heading:'大号加粗标题，页面或区块的主文案',
+  text:'普通正文/说明文字',
+  image:'图片占位框，标注图片内容与来源',
+  icon:'小图标占位（功能入口、状态图标）',
+  draw:'手绘笔（工具）：点击后画布上徒手画线条/框/箭头，表达布局意图',
+  listitem:'列表的一行：头像+两行文字+箭头，用于消息列表/内容列表',
+  button:'可点击的按钮，标注里写清点击后发生什么',
+  input:'单行输入框，标注里写占位提示与校验规则',
+  textarea:'多行输入框，用于评论/简介等长文本',
+  select:'下拉选择框，标注可选项',
+  checkbox:'勾选框，用于多选或确认（如记住我）',
+  switch:'开关，用于设置项的开/关',
+  badge:'小徽章/状态标签（如"NEW"、数量角标）',
+  tabs:'页内标签页，同一页面内的内容分类切换',
+  table:'数据表格，标注列名与数据来源',
+  chart:'图表占位（柱状/折线），标注图表类型与数据',
+  progress:'进度条/血条/加载条，标注取值范围与含义',
+  slider:'滑块，拖动选择数值（音量、透明度、难度）',
+  rating:'星级/评分，点击打分',
+  avatar:'用户/角色头像（圆形），可叠角标',
+  steps:'步骤条，表示流程进度（第1步→第2步→…）',
+  pagination:'分页器，上一页/下一页/页码',
+  dialog:'弹窗/对话框（游戏对话、确认框），标注触发条件与按钮',
+  toast:'轻提示条，操作后短暂弹出的反馈文案',
+  video:'视频/动画播放器占位',
+  map:'地图/小地图占位（游戏 HUD 或地图页）',
+  joystick:'虚拟摇杆（游戏），标注控制方向还是角色移动',
+  skillbar:'技能栏/快捷栏（游戏），标注格子数与触发键',
+  hpbar:'角色状态条：名字+生命/魔法双条，放屏幕角落，标注属性名',
+  bosshbar:'Boss/关卡血条：宽条+Boss 名，通常屏幕顶部居中',
+  inventory:'背包/物品格子网格，标注行列数与哪些格有物品/数量',
+  questtracker:'任务追踪列表（HUD 侧边），显示当前任务与进度',
+  cooldown:'单个技能冷却图标（图标+转冷遮罩+剩余秒数）',
+  buffbar:'Buff/Debuff 图标行，图标带剩余时间小条',
+  partylist:'组队成员列表：头像+名字+每人血条',
+  crosshair:'射击准星（十字/点），居中放置',
+  dmgnumber:'伤害/治疗飘字（如 -47 / +12），标注数值与颜色含义',
+  killfeed:'击杀播报行：谁击杀了谁，右上角堆叠',
+  chatbox:'聊天窗：历史消息+输入行，半透明放角落',
+  currency:'货币栏：金币/钻石等资源数量+加号按钮',
+  pausemenu:'暂停/设置菜单：半透明遮罩+竖排按钮',
+  scoreboard:'计分板：两队比分+剩余时间',
+  tutorialhint:'教学提示：键帽+操作说明（如 W=前进）',
+  loadingbar:'加载屏：标题+进度条+小提示文案',
+};
+
+const TEMPLATES = {
+  '手机 · 空白页': {frame:'phone', els:[]},
+  '手机 · 登录页': {frame:'phone', els:[
+    {type:'navbar', x:0, y:0, label:'登录'},
+    {type:'heading', x:32, y:120, w:240, h:44, label:'欢迎回来 👋', notes:'主标题，进入页面时轻微上浮入场'},
+    {type:'text', x:32, y:172, w:280, h:22, label:'使用手机号登录你的账号'},
+    {type:'input', x:32, y:230, w:326, h:50, label:'手机号', notes:'11 位手机号校验，格式错误时红框抖动'},
+    {type:'input', x:32, y:296, w:326, h:50, label:'密码', notes:'密码输入，支持显示/隐藏切换'},
+    {type:'checkbox', x:32, y:362, label:'记住我', notes:'勾选后本地记住手机号'},
+    {type:'button', x:32, y:420, w:326, h:52, label:'登 录', notes:'主按钮；点击校验通过后跳转首页，失败显示 toast'},
+    {type:'text', x:110, y:496, w:170, h:20, label:'没有账号？立即注册', notes:'点击跳转注册页'},
+  ]},
+  '手机 · 内容列表页': {frame:'phone', els:[
+    {type:'navbar', x:0, y:0, label:'发现'},
+    {type:'input', x:16, y:72, w:358, h:44, label:'🔍 搜索内容', notes:'输入即搜索，300ms 防抖'},
+    {type:'listitem', x:16, y:136, w:358, h:70, label:'文章标题一', notes:'点击进入详情页；显示封面、标题、摘要'},
+    {type:'listitem', x:16, y:216, w:358, h:70, label:'文章标题二'},
+    {type:'listitem', x:16, y:296, w:358, h:70, label:'文章标题三'},
+    {type:'button', x:294, y:740, w:64, h:64, label:'＋', notes:'悬浮发布按钮，点击打开发布弹窗'},
+    {type:'tabbar', x:0, y:780, label:'首页 发现 消息 我的'},
+  ]},
+  '手机 · 设置表单页': {frame:'phone', els:[
+    {type:'navbar', x:0, y:0, label:'设置'},
+    {type:'listitem', x:16, y:80, w:358, h:76, label:'头像 / 昵称', notes:'点击进入个人资料编辑页'},
+    {type:'divider', x:16, y:172, w:358},
+    {type:'listitem', x:16, y:192, w:290, h:56, label:'消息通知', notes:'右侧开关，控制推送'},
+    {type:'switch', x:322, y:204, label:'通知开关', notes:'默认开启，关闭时二次确认'},
+    {type:'listitem', x:16, y:264, w:290, h:56, label:'深色模式', notes:'跟随系统'},
+    {type:'switch', x:322, y:276, label:'深色开关'},
+    {type:'listitem', x:16, y:336, w:358, h:56, label:'清除缓存', notes:'点击清除并显示缓存大小变化'},
+    {type:'button', x:32, y:640, w:326, h:50, label:'退出登录', notes:'危险操作，红色描边，点击弹确认框'},
+  ]},
+  '桌面 · 管理后台仪表盘': {frame:'desktop', els:[
+    {type:'container', x:0, y:0, w:200, h:800, label:'侧边栏', notes:'固定左侧，含 Logo 与菜单项：概览/订单/用户/设置'},
+    {type:'navbar', x:200, y:0, w:1080, h:56, label:'数据概览'},
+    {type:'card', x:232, y:88, w:246, h:110, label:'今日订单 1,284', notes:'数值用大字号，环比用绿色箭头'},
+    {type:'card', x:498, y:88, w:246, h:110, label:'销售额 ¥52,830'},
+    {type:'card', x:764, y:88, w:246, h:110, label:'新增用户 356'},
+    {type:'card', x:1030, y:88, w:218, h:110, label:'转化率 4.2%'},
+    {type:'chart', x:232, y:230, w:512, h:280, label:'近 7 日销量趋势', notes:'柱状图，悬浮显示数值 tooltip'},
+    {type:'table', x:768, y:230, w:480, h:280, label:'最近订单', notes:'列：订单号/金额/状态；状态用彩色徽章'},
+  ]},
+  '桌面 · 官网落地页': {frame:'desktop', els:[
+    {type:'navbar', x:0, y:0, w:1280, h:64, label:'LOGO'},
+    {type:'button', x:1100, y:12, w:140, h:40, label:'免费试用', notes:'导航右侧主按钮，点击滚到注册区'},
+    {type:'heading', x:120, y:160, w:520, h:120, label:'让团队协作更高效', notes:'大标题两行，首行渐变色强调'},
+    {type:'text', x:120, y:296, w:460, h:60, label:'一站式管理任务、文档与进度，支持 30+ 集成'},
+    {type:'image', x:660, y:130, w:500, h:280, label:'产品主视觉', notes:'右侧产品截图，带轻投影'},
+    {type:'card', x:120, y:480, w:320, h:170, label:'⚡ 任务管理', notes:'三列特性卡，悬浮上浮'},
+    {type:'card', x:480, y:480, w:320, h:170, label:'📊 数据看板'},
+    {type:'card', x:840, y:480, w:320, h:170, label:'🔒 权限安全'},
+    {type:'button', x:540, y:700, w:200, h:52, label:'立即开始', notes:'页面底部主 CTA'},
+  ]},
+};
+
+/* ================= 状态 ================= */
+let state = {
+  frameType:'phone', customW:390, customH:844, elements:[], nextId:1, selectedId:null, selectedIds:[],
+  snap:true, history:[], future:[], tool:'select',
+  style:{ strokeWidth:2.5, dash:'solid', stroke:'#3d4a5d', fill:'#ffffff', primary:'#4f6ef7', corner:'round', extra:'' },
+};
+const DASH={solid:null,dashed:[9,5],dotted:[2,5]};
+function readStyle(){
+  const s=state.style;
+  s.strokeWidth=Math.max(1,Math.min(12,+document.getElementById('stWidth').value||2.5));
+  s.dash=document.getElementById('stDash').value;
+  s.stroke=document.getElementById('stStroke').value;
+  s.fill=document.getElementById('stFill').value;
+  s.primary=document.getElementById('stPrimary').value;
+  s.corner=document.getElementById('stCorner').value;
+  s.extra=document.getElementById('stExtra').value.trim();
+  return s;
+}
+for(const id of ['stWidth','stDash','stStroke','stFill','stPrimary','stCorner','stExtra']){
+  document.getElementById(id).addEventListener('input',readStyle);
+}
+let zoom = 1;
+let currentTemplate = '手机 · 空白页';
+let currentJob = null; let jobTimer = null;
+let lastJob = { dir: null, sessionId: null };
+const $ = (id)=>document.getElementById(id);
+const frameEl = $('frame');
+
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function toast(msg,ms=2200){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._tm);t._tm=setTimeout(()=>t.classList.remove('show'),ms);}
+function frameSize(){
+  if(state.frameType==='custom'){
+    const w=Math.max(120,Math.min(4000,+state.customW||390));
+    const h=Math.max(120,Math.min(4000,+state.customH||844));
+    return {w,h,label:'自定义'};
+  }
+  return FRAME_PRESETS[state.frameType]||FRAMES[state.frameType]||FRAMES.phone;
+}
+function typeName(t){return TYPES[t]?TYPES[t].name:t;}
+function sel(){return state.elements.find(e=>e.id===state.selectedId)||null;}
+
+/* ================= 历史记录 ================= */
+function snapshot(){return JSON.stringify({elements:state.elements,nextId:state.nextId});}
+function pushHistory(){state.history.push(snapshot());if(state.history.length>80)state.history.shift();state.future.length=0;}
+function undo(){if(!state.history.length)return toast('没有可撤销的操作');state.future.push(snapshot());applySnap(state.history.pop());}
+function redo(){if(!state.future.length)return toast('没有可重做的操作');state.history.push(snapshot());applySnap(state.future.pop());}
+function applySnap(s){const o=JSON.parse(s);state.elements=o.elements;state.nextId=o.nextId;
+  if(!state.elements.find(e=>e.id===state.selectedId))state.selectedId=null;renderAll();}
+
+/* ================= 元素操作 ================= */
+function addElement(type,x,y,extra){
+  const t=TYPES[type]; if(!t)return null;
+  const f=frameSize();
+  const w=extra&&extra.w!==undefined?extra.w:(type==='navbar'||type==='tabbar'?f.w:t.w);
+  const h=extra&&extra.h!==undefined?extra.h:t.h;
+  const el=Object.assign({id:'e'+(state.nextId++),type,
+    x:Math.round(x??(f.w-w)/2), y:Math.round(y??(f.h-h)/2), w, h,
+    label:extra&&extra.label!==undefined?extra.label:'', notes:extra&&extra.notes||'',
+    z:state.elements.length+1}, extra||{});
+  el.x=Math.max(0,Math.min(el.x,f.w-Math.min(w,f.w)));
+  el.y=Math.max(0,Math.min(el.y,f.h-Math.min(h,f.h)));
+  state.elements.push(el);
+  state.selectedId=el.id; state.selectedIds=[el.id];
+  return el;
+}
+function deleteSelected(){
+  const ids=state.selectedIds.length?state.selectedIds:(state.selectedId?[state.selectedId]:[]);
+  if(!ids.length)return toast('未选中元素');
+  pushHistory();
+  state.elements=state.elements.filter(x=>!ids.includes(x.id));
+  state.selectedId=null; state.selectedIds=[]; renderAll();
+}
+function duplicateSelected(){
+  const ids=state.selectedIds.length?state.selectedIds:(state.selectedId?[state.selectedId]:[]);
+  if(!ids.length)return;
+  pushHistory();
+  const copies=state.elements.filter(x=>ids.includes(x.id)).map(x=>({...x,id:'e'+(state.nextId++),x:x.x+16,y:x.y+16,z:state.elements.length+1,group:undefined}));
+  state.elements.push(...copies);
+  state.selectedIds=copies.map(c=>c.id); state.selectedId=copies[0].id;
+  renderAll();
+}
+function snap(v){return state.snap?Math.round(v/8)*8:Math.round(v);}
+
+/* ================= 渲染 ================= */
+function elInner(e){
+  switch(e.type){
+    case 'navbar': return esc(e.label||'导航');
+    case 'tabbar': {const items=(e.label||'首页 发现 我的').split(/\s+/);
+      return items.map(i=>`<span style="display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:#6b7686"><span class="dot"></span>${esc(i)}</span>`).join('');}
+    case 'button': case 'badge': return esc(e.label||'按钮');
+    case 'heading': return esc(e.label||'标题');
+    case 'text': return esc(e.label||'文本内容');
+    case 'input': return esc(e.label||'请输入内容');
+    case 'textarea': return esc(e.label||'多行输入…');
+    case 'select': return `<span>${esc(e.label||'请选择')}</span><span style="color:#93a1b3">▾</span>`;
+    case 'image': return `<span style="font-size:20px">⊠</span><span>${esc(e.label||'图片')}</span>`;
+    case 'icon': return '▣';
+    case 'draw': {
+      const strokes=e.strokes||[];
+      const st=readStyle();
+      const dash=DASH[st.dash]?` stroke-dasharray="${DASH[st.dash].join(' ')}"`:'';
+      const pl=strokes.map(pts=>pts.map(p=>`${+p.x},${+p.y}`).join(' ')).join('" /><polyline points="');
+      return `<svg width="100%" height="100%" viewBox="0 0 ${Math.max(1,e.w)} ${Math.max(1,e.h)}" preserveAspectRatio="none">`+
+        `<polyline points="${pl}" fill="none" stroke="${st.stroke}" stroke-width="${st.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${dash}/></svg>`;
+    }
+    case 'container': return `<span style="font-size:11px">${esc(e.label||'区块')}</span>`;
+    case 'card': return `<div style="font-weight:600;font-size:12px">${esc(e.label||'卡片标题')}</div>
+      <div style="height:6px;width:70%;background:#e6ebf2;border-radius:3px;margin-top:8px"></div>
+      <div style="height:6px;width:45%;background:#e6ebf2;border-radius:3px;margin-top:6px"></div>`;
+    case 'listitem': return `<span class="av"></span><span class="lns">
+      <span class="ln" style="display:block"></span><span class="ln s" style="display:block"></span></span><span class="chv">›</span>`;
+    case 'checkbox': return `<span class="bx"></span>${esc(e.label||'选项')}`;
+    case 'tabs': {const items=(e.label||'标签一 标签二 标签三').split(/\s+/);
+      return items.map((i,ix)=>`<span class="${ix===0?'on':''}">${esc(i)}</span>`).join('');}
+    case 'switch': return '';
+    case 'table': return `<span style="position:absolute;left:8px;top:6px;font-size:11px;color:#8b98a9">${esc(e.label||'表格')}</span>`;
+    case 'chart': {const hs=[38,62,48,80,58,72];
+      return hs.map(h=>`<i style="height:${h}%"></i>`).join('')+
+        `<span style="position:absolute;left:8px;top:6px;font-size:11px;color:#8b98a9">${esc(e.label||'图表')}</span>`;}
+    case 'divider': return '';
+    case 'progress': return `<div style="width:100%;height:100%;border:1.5px solid #9fadc0;border-radius:999px;overflow:hidden"><div style="width:62%;height:100%;background:#4f6ef7"></div></div>`;
+    case 'slider': return `<div style="width:100%;height:100%;display:flex;align-items:center;padding:0 4px"><div style="flex:1;height:4px;background:#c3cddb;border-radius:2px;position:relative"><div style="position:absolute;right:0;top:0;height:100%;width:35%;background:#4f6ef7;border-radius:2px"></div><div style="position:absolute;right:calc(35% - 8px);top:-6px;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #4f6ef7"></div></div></div>`;
+    case 'rating': return `<div style="width:100%;height:100%;display:flex;align-items:center;gap:3px;font-size:15px;color:#f5b301">${'★★★★'}<span style="color:#c9d2dd">★</span></div>`;
+    case 'steps': {let h=''; for(let i=0;i<3;i++){h+=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px"><div style="width:18px;height:18px;border-radius:50%;background:${i===0?'#4f6ef7':'#dde4ec'};color:${i===0?'#fff':'#8b98a9'};font-size:10px;display:flex;align-items:center;justify-content:center">${i+1}</div><div style="font-size:9px;color:#8b98a9">步骤${i+1}</div></div>`;} return `<div style="width:100%;height:100%;display:flex">${h}</div>`;}
+    case 'pagination': return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;color:#6b7686">‹ <span style="color:#4f6ef7;font-weight:600">1</span> 2 3 … 8 ›</div>`;
+    case 'avatar': return `<div style="width:100%;height:100%;border-radius:50%;background:#dbe4f0;border:2px solid #b9c6d6;display:flex;align-items:center;justify-content:center;font-size:18px">👤</div>`;
+    case 'dialog': return `<div style="position:absolute;inset:6px;border:1.5px solid #8b98a9;border-radius:10px;background:#fff;box-shadow:0 6px 18px rgba(30,40,60,.18);padding:8px"><div style="font-weight:600;font-size:12px">${esc(e.label||'弹窗标题')}</div><div style="height:6px;width:80%;background:#e6ebf2;border-radius:3px;margin-top:8px"></div><div style="height:6px;width:55%;background:#e6ebf2;border-radius:3px;margin-top:6px"></div><div style="position:absolute;right:8px;bottom:8px;display:flex;gap:6px"><span style="padding:2px 10px;border:1px solid #c3cddb;border-radius:6px;font-size:10px">取消</span><span style="padding:2px 10px;background:#4f6ef7;color:#fff;border-radius:6px;font-size:10px">确定</span></div></div>`;
+    case 'toast': return `<div style="width:100%;height:100%;background:#2a3342;color:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px">${esc(e.label||'提示文案')}</div>`;
+    case 'video': return `<div style="width:100%;height:100%;background:#1a2230;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff"><span style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:14px">▶</span></div>`;
+    case 'map': return `<div style="width:100%;height:100%;background:#dfe8dc;border:1.5px solid #9fb09a;border-radius:6px;position:relative;overflow:hidden"><div style="position:absolute;left:12%;top:18%;width:30%;height:22%;background:#c2d4bd;border-radius:4px"></div><div style="position:absolute;right:10%;bottom:14%;width:26%;height:30%;background:#c2d4bd;border-radius:4px"></div><div style="position:absolute;left:48%;top:44%;width:12px;height:12px;border-radius:50%;background:#e5484d;border:2px solid #fff"></div></div>`;
+    case 'joystick': return `<div style="width:100%;height:100%;border-radius:50%;background:rgba(180,192,206,.35);border:2px solid #9fadc0;position:relative"><div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:44%;height:44%;border-radius:50%;background:#4f6ef7;box-shadow:0 2px 6px rgba(0,0,0,.25)"></div></div>`;
+    case 'skillbar': {let h=''; for(let i=0;i<6;i++){h+=`<div style="width:34px;height:34px;border:2px solid #8b98a9;border-radius:8px;background:#202a3a;display:flex;align-items:center;justify-content:center;font-size:14px">${i%2?'⚡':'🛡'}</div>`;} return `<div style="width:100%;height:100%;display:flex;gap:6px;align-items:center;justify-content:center;background:rgba(20,26,38,.85);border-radius:10px;padding:4px">${h}</div>`;}
+    case 'hpbar': return `<div style="width:100%;height:100%;background:rgba(15,20,30,.75);border-radius:8px;padding:5px 8px"><div style="font-size:10px;color:#e7eef7">${esc(e.label||'角色名')} Lv.12</div><div style="height:8px;background:#3a1c22;border-radius:4px;margin-top:3px;overflow:hidden"><div style="width:70%;height:100%;background:#e5484d"></div></div><div style="height:6px;background:#1c2a3a;border-radius:3px;margin-top:3px;overflow:hidden"><div style="width:45%;height:100%;background:#3a7bd5"></div></div></div>`;
+    case 'bosshbar': return `<div style="width:100%;height:100%;background:rgba(15,10,15,.7);border:1.5px solid #6b2737;border-radius:8px;padding:4px 10px"><div style="font-size:10px;color:#f0d9dd;text-align:center">${esc(e.label||'深渊领主 · 阶段二')}</div><div style="height:10px;background:#2a1218;border-radius:5px;margin-top:3px;overflow:hidden;border:1px solid #7a3b48"><div style="width:58%;height:100%;background:linear-gradient(180deg,#e5484d,#8f1f26)"></div></div></div>`;
+    case 'inventory': {let h='';for(let i=0;i<12;i++){h+=`<div style="width:24px;height:24px;border:1px solid #6b7a90;border-radius:5px;background:#1c2532;position:relative">${i<3?`<span style="position:absolute;right:1px;bottom:0;font-size:8px;color:#ffd76a">${i+2}</span>`:''}${i===0?'<span style="position:absolute;inset:3px;background:#4f6ef7;border-radius:3px"></span>':''}</div>`;}return `<div style="width:100%;height:100%;background:rgba(15,20,30,.8);border-radius:8px;padding:4px;display:grid;grid-template-columns:repeat(6,1fr);gap:3px">${h}</div>`;}
+    case 'questtracker': return `<div style="width:100%;height:100%;background:rgba(15,20,30,.65);border-radius:8px;padding:6px 8px;font-size:10px;color:#dfe7f2"><div style="font-weight:600;color:#ffd76a">${esc(e.label||'主线任务')}</div><div style="margin-top:3px">✓ 击杀 8/10 史莱姆</div><div style="margin-top:2px">○ 收集草药 3/5</div><div style="margin-top:2px;color:#9db4d8">◆ 前往北门集合</div></div>`;
+    case 'cooldown': return `<div style="width:100%;height:100%;border:2px solid #8b98a9;border-radius:8px;background:#202a3a;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;width:100%;height:45%;background:rgba(10,14,22,.75)"></div><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600">3</span></div>`;
+    case 'buffbar': {let h='';for(let i=0;i<4;i++){h+=`<div style="width:26px;height:26px;border-radius:5px;background:${i<2?'#1e3a5f':'#3a1c22'};border:1px solid #8b98a9;position:relative"><div style="position:absolute;left:1px;right:1px;bottom:1px;height:3px;border-radius:2px;background:${i<2?'#2f9e6e':'#e5484d'}"></div></div>`;}return `<div style="width:100%;height:100%;display:flex;gap:5px;align-items:center">${h}</div>`;}
+    case 'partylist': {let h='';for(let i=0;i<3;i++){h+=`<div style="display:flex;align-items:center;gap:5px;background:rgba(15,20,30,.6);border-radius:6px;padding:2px 6px"><div style="width:16px;height:16px;border-radius:50%;background:#dbe4f0"></div><div style="flex:1"><div style="font-size:9px;color:#e7eef7">队友${i+1}</div><div style="height:4px;background:#3a1c22;border-radius:2px;overflow:hidden"><div style="width:${90-i*25}%;height:100%;background:#e5484d"></div></div></div></div>`;}return `<div style="width:100%;height:100%;display:flex;flex-direction:column;gap:3px">${h}</div>`;}
+    case 'crosshair': return `<svg width="100%" height="100%" viewBox="0 0 28 28"><line x1="14" y1="2" x2="14" y2="10" stroke="#fff" stroke-width="2"/><line x1="14" y1="18" x2="14" y2="26" stroke="#fff" stroke-width="2"/><line x1="2" y1="14" x2="10" y2="14" stroke="#fff" stroke-width="2"/><line x1="18" y1="14" x2="26" y2="14" stroke="#fff" stroke-width="2"/><circle cx="14" cy="14" r="1.8" fill="#fff"/></svg>`;
+    case 'dmgnumber': return `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1"><span style="color:#ff5a5f;font-size:16px;font-weight:700;text-shadow:0 1px 2px #000">-47</span><span style="color:#7fe0b6;font-size:11px;font-weight:600;text-shadow:0 1px 2px #000">+12</span></div>`;
+    case 'killfeed': return `<div style="width:100%;height:100%;background:rgba(15,20,30,.6);border-radius:6px;padding:4px 8px;font-size:10px;color:#dfe7f2"><div>玩家A <span style="color:#e5484d">⚔</span> 怪物B</div><div style="color:#9db4d8">夜行者 <span style="color:#e5484d">🔫</span> 玩家C</div></div>`;
+    case 'chatbox': return `<div style="width:100%;height:100%;background:rgba(10,14,22,.6);border-radius:8px;padding:5px 7px;font-size:9px;color:#c9d4e3"><div>[世界] 玩家A：组队来人</div><div>[队伍] 玩家B：马上到</div><div>[系统] 获得物品 ×2</div><div style="margin-top:3px;border-top:1px solid rgba(255,255,255,.2);padding-top:2px;color:#8b98a9">按 Enter 输入…</div></div>`;
+    case 'currency': return `<div style="width:100%;height:100%;background:rgba(15,20,30,.7);border-radius:999px;padding:3px 10px;display:flex;align-items:center;gap:8px;font-size:11px;color:#ffd76a"><span>🪙 1,280</span><span style="color:#9ecbff">💎 45</span><span style="margin-left:auto;color:#7fe0b6">＋</span></div>`;
+    case 'pausemenu': {let h='';for(const t of ['继续游戏','设置','背包','退出副本']){h+=`<div style="padding:5px 0;text-align:center;border:1px solid #4a5a72;border-radius:8px;background:rgba(30,40,58,.9);color:#e7eef7;font-size:11px">${t}</div>`;}return `<div style="width:100%;height:100%;background:rgba(8,12,20,.72);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px">${h}</div>`;}
+    case 'scoreboard': return `<div style="width:100%;height:100%;background:rgba(15,20,30,.8);border-radius:8px;padding:5px 10px;font-size:12px;color:#e7eef7"><div style="display:flex;justify-content:space-between"><span style="color:#7aa2f7">蓝队</span><span style="font-weight:700">02:31</span><span style="color:#f08fa0">红队</span></div><div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700"><span>3</span><span style="color:#8b98a9;font-size:10px">${esc(e.label||'第 2 局')}</span><span>2</span></div></div>`;
+    case 'tutorialhint': return `<div style="width:100%;height:100%;background:rgba(15,20,30,.8);border-radius:8px;padding:4px 8px;display:flex;align-items:center;gap:7px"><span style="padding:2px 7px;border:1.5px solid #c9d4e3;border-radius:5px;color:#fff;font-size:11px">${esc(e.label||'W')}</span><span style="color:#dfe7f2;font-size:11px">按 W 前进，Shift 疾跑</span></div>`;
+    case 'loadingbar': return `<div style="width:100%;height:100%;background:rgba(10,14,22,.85);border-radius:10px;padding:8px 12px"><div style="font-size:11px;color:#e7eef7">${esc(e.label||'正在加载章节 3…')}</div><div style="height:8px;background:#1c2532;border-radius:4px;margin-top:6px;overflow:hidden"><div style="width:64%;height:100%;background:#4f6ef7"></div></div><div style="font-size:9px;color:#8b98a9;margin-top:4px">小提示：按住 Shift 可以疾跑</div></div>`;
+  }
+  return esc(e.label||'');
+}
+function elClass(e){return 'el '+e.type;}
+
+function renderFrame(){
+  const f=frameSize();
+  frameEl.style.width=f.w+'px'; frameEl.style.height=f.h+'px';
+  frameEl.style.transform=`scale(${zoom})`;
+  frameEl.classList.toggle('empty-hint',state.elements.length===0);
+  frameEl.classList.toggle('grid-on',state.snap); // 网格显示跟随吸附开关
+  frameEl.style.marginBottom=((f.h*zoom)-f.h)+'px'; // 占位避免滚动错位
+  const ids=state.selectedIds;
+  const single=ids.length===1?state.elements.find(e=>e.id===ids[0]):null;
+  const sorted=[...state.elements].sort((a,b)=>a.z-b.z);
+  let html='';
+  for(const e of sorted){
+    const selCls=ids.includes(e.id)?' sel':'';
+    const tip=typeName(e.type)+(e.label?' · '+e.label:'')+(e.notes?'｜'+e.notes:'');
+    html+=`<div class="${elClass(e)}${selCls}" data-id="${e.id}" title="${esc(tip)}"
+      style="left:${e.x}px;top:${e.y}px;width:${e.w}px;height:${e.h}px;z-index:${e.z}${e.group?';outline:1px dashed #8fb0ff;outline-offset:2px':''}">${elInner(e)}`;
+    if(single&&e.id===single.id){
+      for(const d of ['nw','n','ne','e','se','s','sw','w']) html+=`<span class="h ${d}" data-h="${d}"></span>`;
+    }
+    html+=`</div>`;
+  }
+  frameEl.innerHTML=html;
+}
+function renderInspector(){
+  const e=sel();
+  const multi=state.selectedIds.length>1;
+  if(multi){
+    const grouped=state.selectedIds.every(id=>{const x=state.elements.find(y=>y.id===id);return x&&x.group;});
+    $('selMeta').textContent=`已选 ${state.selectedIds.length} 个元素${grouped?'（已组合）':'——可组合或整体拖动'}`;
+  }else if(e){
+    $('selMeta').textContent=`#${e.id} · ${typeName(e.type)} · ${Math.round(e.w)}×${Math.round(e.h)} @ (${Math.round(e.x)},${Math.round(e.y)})`;
+  }else{
+    $('selMeta').textContent='未选中——点击/框选画布中的控件';
+  }
+  $('labelField').style.display=!multi&&e&&e.type!=='draw'?'':'none';
+  $('notesField').style.display=!multi&&e?'':'none';
+  $('zRow').style.display=!multi&&e?'':'none';
+  $('gRow').style.display=multi||((e||{}).group)?'':'none';
+  if(!multi&&e&&e.type==='draw'){
+    $('selMeta').textContent=`#${e.id} · 手绘线条 · ${Math.round(e.w)}×${Math.round(e.h)} @ (${Math.round(e.x)},${Math.round(e.y)})`;
+  }else if(!multi&&e){$('elLabel').value=e.label||'';}
+  if(!multi&&e){$('elNotes').value=e.notes||'';}
+  // 列表
+  const list=$('elList');
+  if(!state.elements.length){list.innerHTML='<div class="empty-tip">画布为空</div>';}
+  else{
+    const sorted=[...state.elements].sort((a,b)=>a.z-b.z);
+    list.innerHTML=sorted.map(x=>`<div class="it${state.selectedIds.includes(x.id)?' on':''}" data-id="${x.id}">
+      <span class="tag">${typeName(x.type)}${x.group?' ⛓':''}</span><span class="nm">${esc(x.label||'（无文字）')}</span>
+      <span class="nt${x.notes?' has':''}" title="${x.notes?'已标注用途':'未标注'}">${x.notes?'✎':'·'}</span></div>`).join('');
+  }
+  $('elCount').textContent=`(${state.elements.length}，✎=已标注)`;
+}
+function renderAll(){renderFrame();renderInspector();}
+
+/* ================= 交互：画布 ================= */
+let _fr=null; // frame 缓存 rect：拖拽时避免 60Hz 强制重排
+function invalidateRect(){_fr=null;}
+function framePos(ev){
+  if(!_fr)_fr=frameEl.getBoundingClientRect();
+  const sc=_fr.width/frameSize().w;
+  return {x:(ev.clientX-_fr.left)/sc, y:(ev.clientY-_fr.top)/sc, sc};
+}
+function setTool(t){
+  state.tool=t;
+  document.body.classList.toggle('pen-mode',t==='pen');
+  const item=document.querySelector('.pal-item[data-type="draw"]');
+  if(item)item.classList.toggle('tool-active',t==='pen');
+  if(t==='pen'&&state.selectedId){state.selectedId=null;renderAll();}
+}
+let drag=null, stroke=null, rafPending=false, lastEv=null;
+function onStrokeStart(ev){
+  const p=framePos(ev);
+  const st=readStyle();
+  stroke={pts:[p]};
+  const live=document.createElement('div');
+  live.id='strokeLive';
+  live.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:9999';
+  const dash=DASH[st.dash]?` stroke-dasharray="${DASH[st.dash].join(' ')}"`:'';
+  live.innerHTML=`<svg width="100%" height="100%"><polyline id="strokeLine" fill="none" stroke="${st.stroke}" stroke-width="${st.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${dash} points=""/></svg>`;
+  frameEl.appendChild(live);
+  ev.preventDefault();
+}
+function onStrokeMove(){
+  const p=framePos(lastEv);
+  const pts=stroke.pts, last=pts[pts.length-1];
+  if(Math.hypot(p.x-last.x,p.y-last.y)>=2){pts.push(p);}
+  const pl=pts.map(q=>`${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' ');
+  const line=document.getElementById('strokeLine');
+  if(line)line.setAttribute('points',pl);
+}
+function onStrokeEnd(){
+  const pts=stroke.pts;
+  const live=document.getElementById('strokeLive');
+  if(live)live.remove();
+  stroke=null;
+  const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+  const minX=Math.min(...xs)-6, minY=Math.min(...ys)-6;
+  const w=Math.max(10,Math.max(...xs)-Math.min(...xs)+12), h=Math.max(10,Math.max(...ys)-Math.min(...ys)+12);
+  // 点数过多时抽稀（保留转折感）
+  const simple=[]; let lastP=null;
+  for(const p of pts){ if(!lastP||Math.hypot(p.x-lastP.x,p.y-lastP.y)>=3){simple.push({x:+(p.x-minX).toFixed(1),y:+(p.y-minY).toFixed(1)});lastP=p;} }
+  const end={x:+(pts[pts.length-1].x-minX).toFixed(1),y:+(pts[pts.length-1].y-minY).toFixed(1)};
+  if(simple[simple.length-1]!==end)simple.push(end);
+  pushHistory();
+  addElement('draw',Math.max(0,Math.round(minX)),Math.max(0,Math.round(minY)),{w:Math.round(w),h:Math.round(h),strokes:[simple]});
+  renderAll();
+}
+frameEl.addEventListener('mousedown',ev=>{
+  if(state.tool==='pen'&&ev.button===0){ onStrokeStart(ev); return; }
+  const elDiv=ev.target.closest('.el');
+  if(elDiv&&!ev.target.closest('.h')){
+    const id=elDiv.dataset.id;
+    const e0=state.elements.find(x=>x.id===id); if(!e0)return;
+    const memberIds=e0.group?state.elements.filter(x=>x.group===e0.group).map(x=>x.id):[id];
+    if(ev.shiftKey){ state.selectedIds=state.selectedIds.includes(id)?state.selectedIds:[...new Set([...state.selectedIds,...memberIds])]; }
+    else if(!state.selectedIds.includes(id)||state.selectedIds.length!==memberIds.length){ state.selectedIds=memberIds; }
+    state.selectedId=id;
+    renderAll();
+    const p=framePos(ev);
+    pushHistory();
+    drag={mode:'move',e:e0,p0:p,
+      members:state.elements.filter(x=>state.selectedIds.includes(x.id)).map(x=>({e:x,start:{...x}}))};
+    ev.preventDefault();
+  } else if(ev.target.closest('.h')){
+    const e=sel(); if(!e)return;
+    const h=ev.target.closest('.h');
+    const p=framePos(ev);
+    pushHistory();
+    drag={mode:'resize',dir:h.dataset.h,e,start:{...e},p0:p};
+    ev.preventDefault();
+  } else if(ev.target===frameEl){
+    const p=framePos(ev);
+    drag={mode:'marquee',p0:p,rect:null};
+    const mq=document.createElement('div'); mq.id='marquee'; frameEl.appendChild(mq);
+    ev.preventDefault();
+  }
+});
+window.addEventListener('mousemove',ev=>{
+  if(!drag&&!stroke)return;
+  lastEv=ev;
+  if(rafPending)return;      // rAF 节流：一帧最多处理一次
+  rafPending=true;
+  requestAnimationFrame(()=>{ rafPending=false;
+    if(!drag&&!lastEv)return;
+    if(stroke){ onStrokeMove(); return; }
+    if(drag.mode==='marquee'){
+      const p=framePos(lastEv);
+      const x=Math.min(p.x,drag.p0.x),y=Math.min(p.y,drag.p0.y);
+      const w=Math.abs(p.x-drag.p0.x),h=Math.abs(p.y-drag.p0.y);
+      drag.rect={x,y,w,h};
+      const mq=document.getElementById('marquee');
+      if(mq){mq.style.left=x+'px';mq.style.top=y+'px';mq.style.width=w+'px';mq.style.height=h+'px';}
+      return;
+    }
+    const p=framePos(lastEv); const e=drag.e;
+    const dx=p.x-drag.p0.x, dy=p.y-drag.p0.y;
+    if(drag.mode==='move'){
+      for(const m of drag.members){
+        m.e.x=Math.max(-m.e.w/2,Math.min(snap(m.start.x+dx),frameSize().w-m.e.w/2));
+        m.e.y=Math.max(-m.e.h/2,Math.min(snap(m.start.y+dy),frameSize().h-m.e.h/2));
+      }
+    }else{
+      const s=drag.start;
+      let {x,y,w,h}={x:s.x,y:s.y,w:s.w,h:s.h};
+      if(drag.dir.includes('e')) w=Math.max(12,snap(s.w+dx));
+      if(drag.dir.includes('s')) h=Math.max(2,snap(s.h+dy));
+      if(drag.dir.includes('w')){w=Math.max(12,snap(s.w-dx));x=s.x+(s.w-w);}
+      if(drag.dir.includes('n')){h=Math.max(2,snap(s.h-dy));y=s.y+(s.h-h);}
+      Object.assign(e,{x,y,w,h});
+    }
+    // 拖动中轻量刷新（只更新涉及元素与元信息）
+    const ids=drag.mode==='move'?drag.members.map(m=>m.e.id):[e.id];
+    for(const id of ids){
+      const x=state.elements.find(q=>q.id===id);
+      const div=frameEl.querySelector(`[data-id="${id}"]`);
+      if(div&&x){div.style.left=x.x+'px';div.style.top=x.y+'px';div.style.width=x.w+'px';div.style.height=x.h+'px';
+        div.querySelectorAll('.h').forEach(h=>h.remove());}
+    }
+    $('selMeta').textContent=`#${e.id} · ${typeName(e.type)} · ${Math.round(e.w)}×${Math.round(e.h)} @ (${Math.round(e.x)},${Math.round(e.y)})`;
+  });
+});
+window.addEventListener('mouseup',()=>{
+  if(stroke){onStrokeEnd();}
+  if(drag){
+    if(drag.mode==='marquee'){
+      const mq=document.getElementById('marquee'); if(mq)mq.remove();
+      const r=drag.rect;
+      if(r&&r.w>4&&r.h>4){
+        state.selectedIds=state.elements.filter(e=>!(e.x+e.w<r.x||e.x>r.x+r.w||e.y+e.h<r.y||e.y>r.y+r.h)).map(e=>e.id);
+        state.selectedId=state.selectedIds[0]||null;
+      }else{ state.selectedIds=[]; state.selectedId=null; }
+    }
+    drag=null; renderAll();
+  }
+});
+
+frameEl.addEventListener('dragover',ev=>ev.preventDefault());
+frameEl.addEventListener('drop',ev=>{
+  ev.preventDefault();
+  const type=ev.dataTransfer.getData('text/plain'); if(!TYPES[type])return;
+  const p=framePos(ev);
+  pushHistory();
+  addElement(type,p.x,p.y); renderAll();
+});
+
+document.addEventListener('keydown',ev=>{
+  const tag=(ev.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select')return;
+  if(ev.key==='Escape'){
+    if(state.tool==='pen')setTool('select');
+    state.selectedId=null;state.selectedIds=[];renderAll();return;
+  }
+  if(ev.ctrlKey&&ev.key.toLowerCase()==='z'){ev.preventDefault();undo();return;}
+  if(ev.ctrlKey&&ev.key.toLowerCase()==='y'){ev.preventDefault();redo();return;}
+  if(ev.key==='Delete'||ev.key==='Backspace'){deleteSelected();return;}
+  if(ev.ctrlKey&&ev.key.toLowerCase()==='d'){ev.preventDefault();duplicateSelected();return;}
+  const e=sel(); if(!e)return;
+  const step=ev.shiftKey?1:8;
+  const mv={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]}[ev.key];
+  if(mv){ev.preventDefault();pushHistory();e.x+=mv[0];e.y+=mv[1];renderAll();}
+});
+
+/* ================= 控件库悬浮说明 ================= */
+const palTip=document.createElement('div');
+palTip.style.cssText='position:fixed;z-index:999;max-width:240px;background:#232c3b;color:#fff;padding:7px 10px;border-radius:8px;font-size:12px;line-height:1.5;pointer-events:none;display:none;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+document.body.appendChild(palTip);
+$('palette').addEventListener('mousemove',ev=>{
+  const it=ev.target.closest('.pal-item');
+  if(!it||!HELP[it.dataset.type]){palTip.style.display='none';return;}
+  palTip.innerHTML=`<b>${TYPES[it.dataset.type].name}</b><br>${HELP[it.dataset.type]}`;
+  palTip.style.display='block';
+  palTip.style.left=Math.min(ev.clientX+14,innerWidth-250)+'px';
+  palTip.style.top=Math.min(ev.clientY+14,innerHeight-90)+'px';
+});
+$('palette').addEventListener('mouseleave',()=>palTip.style.display='none');
+
+/* ================= 右键按住拖动 = 平移画布 ================= */
+let pan=null;
+$('canvasArea').addEventListener('contextmenu',ev=>ev.preventDefault());
+$('canvasArea').addEventListener('mousedown',ev=>{
+  if(ev.button!==2)return;
+  pan={x:ev.clientX,y:ev.clientY,sl:ev.currentTarget.scrollLeft,st:ev.currentTarget.scrollTop};
+  ev.currentTarget.style.cursor='grabbing';
+  ev.preventDefault();
+});
+window.addEventListener('mousemove',ev=>{
+  if(!pan)return;
+  const area=$('canvasArea');
+  area.scrollLeft=pan.sl-(ev.clientX-pan.x);
+  area.scrollTop=pan.st-(ev.clientY-pan.y);
+});
+window.addEventListener('mouseup',ev=>{
+  if(pan&&ev.button===2){pan=null;$('canvasArea').style.cursor='';}
+});
+
+/* ================= 控件面板 ================= */
+(function buildPalette(){
+  const pal=$('palette'); let html='';
+  for(const cat of Object.keys(CATS)){
+    html+=`<h4>${CATS[cat]}</h4>`;
+    for(const [key,t] of Object.entries(TYPES)){
+      if(t.cat!==cat)continue;
+      const cls=t.cat==='控件'?'f round':(key==='container'?'dash':(key==='image'?'':''));
+      html+=`<div class="pal-item" draggable="true" data-type="${key}"><span class="ic ${cls}"></span>${t.name}</div>`;
+    }
+  }
+  pal.innerHTML='<button class="fold-btn" id="palFold" title="收起/展开控件库">⟨</button><div id="palBody">'+html+'</div>';
+  pal.addEventListener('click',ev=>{
+    const it=ev.target.closest('.pal-item'); if(!it)return;
+    // 手绘笔是工具：点击切换笔模式，不往画布加元素
+    if(it.dataset.type==='draw'){
+      setTool(state.tool==='pen'?'select':'pen');
+      return;
+    }
+    if(state.tool==='pen')setTool('select');
+    pushHistory();
+    const f=frameSize();
+    const t=TYPES[it.dataset.type];
+    const cx=(f.w-(t.w||f.w))/2, cy=(f.h-t.h)/2;
+    addElement(it.dataset.type,Math.max(0,cx),Math.max(0,cy)); renderAll();
+  });
+  pal.addEventListener('dragstart',ev=>{
+    const it=ev.target.closest('.pal-item');
+    if(it)ev.dataTransfer.setData('text/plain',it.dataset.type);
+  });
+})();
+
+/* ================= 元素清单/检查器事件 ================= */
+$('elList').addEventListener('click',ev=>{
+  const it=ev.target.closest('.it'); if(!it)return;
+  state.selectedId=it.dataset.id; state.selectedIds=[it.dataset.id]; renderAll();
+});
+$('elLabel').addEventListener('input',()=>{const e=sel();if(e){e.label=$('elLabel').value;renderFrame();renderInspector._skip=true;}});
+$('elLabel').addEventListener('change',()=>{pushHistory();renderAll();});
+$('elNotes').addEventListener('input',()=>{const e=sel();if(e)e.notes=$('elNotes').value;});
+$('elNotes').addEventListener('change',()=>{pushHistory();renderAll();});
+frameEl.addEventListener('dblclick',ev=>{
+  const elDiv=ev.target.closest('.el'); if(!elDiv)return;
+  const e=state.elements.find(x=>x.id===elDiv.dataset.id); if(!e)return;
+  if(e.type==='draw'){ state.selectedIds=[e.id]; state.selectedId=e.id; renderAll(); $('elNotes').focus(); return; }
+  // 控件上双击直接改文字（inline 编辑）
+  state.selectedIds=[e.id]; state.selectedId=e.id; renderAll();
+  const div=frameEl.querySelector(`[data-id="${e.id}"]`); if(!div)return;
+  const input=document.createElement('input');
+  input.className='inline-edit'; input.value=e.label||'';
+  div.appendChild(input); input.focus(); input.select();
+  let done=false;
+  const commit=(ok)=>{ if(done)return; done=true;
+    if(ok&&input.value!==(e.label||'')){pushHistory();e.label=input.value;}
+    input.remove(); renderAll();
+  };
+  input.addEventListener('blur',()=>commit(true));
+  input.addEventListener('keydown',k=>{
+    if(k.key==='Enter'){k.preventDefault();commit(true);}
+    if(k.key==='Escape'){k.preventDefault();commit(false);}
+    k.stopPropagation();
+  });
+});
+$('btnDel').onclick=deleteSelected;
+$('btnDup').onclick=duplicateSelected;
+$('btnUndo').onclick=undo; $('btnRedo').onclick=redo;
+$('btnSnap').onclick=()=>{state.snap=!state.snap;$('btnSnap').textContent=`网格:${state.snap?'开':'关'}`;renderFrame();};
+$('btnZUp').onclick=()=>{const ids=state.selectedIds.length?state.selectedIds:[state.selectedId].filter(Boolean);if(!ids.length)return toast('未选中元素');pushHistory();for(const id of ids){const e=state.elements.find(x=>x.id===id);if(e)e.z=state.elements.length+1;}renderAll();};
+$('btnZDown').onclick=()=>{const ids=state.selectedIds.length?state.selectedIds:[state.selectedId].filter(Boolean);if(!ids.length)return toast('未选中元素');pushHistory();for(const id of ids){const e=state.elements.find(x=>x.id===id);if(e)e.z=Math.max(1,e.z-1);}renderAll();};
+$('btnZTop').onclick=()=>{const ids=state.selectedIds.length?state.selectedIds:[state.selectedId].filter(Boolean);if(!ids.length)return toast('未选中元素');pushHistory();for(const id of ids){const e=state.elements.find(x=>x.id===id);if(e)e.z=state.elements.length+1;}renderAll();};
+$('btnGroup').onclick=()=>{
+  const ids=state.selectedIds; if(ids.length<2)return toast('先框选/Shift 多选至少 2 个元素再组合');
+  pushHistory();
+  const g='g'+Date.now()%1000000;
+  for(const e of state.elements) if(ids.includes(e.id)) e.group=g;
+  renderAll(); toast(`已组合 ${ids.length} 个元素（整体拖动，虚线框标识）`);
+};
+$('btnUngroup').onclick=()=>{
+  const ids=state.selectedIds.length?state.selectedIds:[state.selectedId].filter(Boolean);
+  const has=ids.some(id=>{const e=state.elements.find(x=>x.id===id);return e&&e.group;});
+  if(!has)return toast('选中集中没有组合');
+  pushHistory();
+  for(const e of state.elements) if(ids.includes(e.id)) delete e.group;
+  renderAll(); toast('已解组');
+};
+
+/* ================= 缩放 ================= */
+function setZoom(z){
+  zoom=Math.min(2,Math.max(0.2,z));
+  invalidateRect();
+  renderFrame();
+  const f=frameSize();
+  $('frameHolder').style.width=(f.w*zoom)+'px';
+  $('frameHolder').style.height=(f.h*zoom)+'px';
+}
+document.querySelectorAll('[data-z]').forEach(b=>b.onclick=()=>setZoom(parseFloat(b.dataset.z)));
+$('btnFit').onclick=()=>{
+  const area=$('canvasArea');
+  const f=frameSize();
+  setZoom(Math.min(1,(area.clientWidth-60)/f.w,(area.clientHeight-60)/f.h));
+};
+// 滚轮缩放（以视口中心为锚，保持画面中心不漂移）
+$('canvasArea').addEventListener('wheel',ev=>{
+  ev.preventDefault();
+  const area=$('canvasArea');
+  const before=zoom;
+  const factor=ev.deltaY<0?1.1:1/1.1;
+  setZoom(zoom*factor);
+  // 保持内容中心：按缩放比例补偿滚动
+  const cx=(area.scrollLeft+area.clientWidth/2)/before, cy=(area.scrollTop+area.clientHeight/2)/before;
+  area.scrollLeft=cx*zoom-area.clientWidth/2;
+  area.scrollTop=cy*zoom-area.clientHeight/2;
+},{passive:false});
+
+/* ================= 画布类型 / 自定义尺寸 / 横竖屏 ================= */
+const FRAME_PRESETS={phone:{w:390,h:844},'phone-land':{w:844,h:390},tablet:{w:834,h:1112},'tablet-land':{w:1112,h:834},desktop:{w:1280,h:800}};
+function followFrameWidth(){
+  const f=frameSize();
+  for(const e of state.elements) if(e.type==='navbar'||e.type==='tabbar') e.w=f.w;
+}
+$('frameSel').onchange=()=>{
+  pushHistory();
+  const v=$('frameSel').value;
+  $('customDims').style.display=v==='custom'?'inline-flex':'none';
+  if(v==='custom'){
+    state.frameType='custom';
+    const f=frameSize();
+    state.customW=f.w; state.customH=f.h;
+    $('cw').value=state.customW; $('ch').value=state.customH;
+  }else{
+    state.frameType=v;
+    state.customW=FRAME_PRESETS[v].w; state.customH=FRAME_PRESETS[v].h;
+    followFrameWidth();
+  }
+  invalidateRect(); setZoom(zoom); renderAll();
+};
+function applyCustomDims(){
+  const w=Math.max(120,Math.min(4000,+$('cw').value||390));
+  const h=Math.max(120,Math.min(4000,+$('ch').value||844));
+  pushHistory();
+  state.frameType='custom'; state.customW=w; state.customH=h;
+  followFrameWidth();
+  invalidateRect(); setZoom(zoom); renderAll();
+}
+$('cw').addEventListener('change',applyCustomDims);
+$('ch').addEventListener('change',applyCustomDims);
+$('btnRotate').onclick=()=>{
+  pushHistory();
+  const f=frameSize();
+  state.frameType='custom'; state.customW=f.h; state.customH=f.w;
+  $('customDims').style.display='inline-flex';
+  $('cw').value=state.customW; $('ch').value=state.customH;
+  if($('frameSel').value!=='custom')$('frameSel').value='custom';
+  followFrameWidth();
+  invalidateRect(); setZoom(zoom); renderAll();
+  toast(`画布已旋转为 ${frameSize().w}×${frameSize().h}（横竖屏互换）`);
+};
+$('btnBlank').onclick=()=>{
+  pushHistory();
+  state.elements=[]; state.nextId=1; state.selectedId=null; state.selectedIds=[];
+  currentTemplate='(空白画布)';
+  renderAll();
+  toast('画布已清空——从左侧拖入控件或用手绘笔自由设计');
+};
+
+/* ================= 面板收纳 ================= */
+$('main').addEventListener('click',ev=>{
+  const id=ev.target.id;
+  if(id==='palFold'||id==='inspFold'){
+    const cls=id==='palFold'?'pal-min':'insp-min';
+    const on=$('main').classList.toggle(cls);
+    ev.target.textContent=id==='palFold'?(on?'⟩':'⟨'):(on?'⟨':'⟩');
+    invalidateRect();
+  }
+});
+
+/* ================= 模板 ================= */
+(function initTpl(){
+  $('tplSel').innerHTML=Object.keys(TEMPLATES).map(k=>`<option>${k}</option>`).join('');
+})();
+function applyTemplate(name){
+  const t=TEMPLATES[name]; if(!t)return;
+  pushHistory();
+  currentTemplate=name;
+  $('tplSel').value=name;
+  state.frameType=t.frame; $('frameSel').value=t.frame;
+  state.elements=[]; state.nextId=1; state.selectedId=null; state.selectedIds=[];
+  const f=frameSize();
+  for(const raw of t.els){
+    const e=Object.assign({},raw);
+    if(e.w===undefined){e.w=(e.type==='navbar'||e.type==='tabbar')?f.w:TYPES[e.type].w;}
+    if(e.h===undefined)e.h=TYPES[e.type].h;
+    e.id='e'+(state.nextId++);
+    e.z=state.elements.length+1;
+    e.label=e.label??''; e.notes=e.notes??'';
+    state.elements.push(e);
+  }
+  setZoom(state.frameType==='desktop'?0.6:1); renderAll();
+  toast(`已应用模板「${name}」，共 ${state.elements.length} 个元素`);
+}
+$('btnTpl').onclick=()=>applyTemplate($('tplSel').value);
+
+/* ================= PNG 渲染（发送给 ZCode 的视觉稿） ================= */
+function renderPng(){
+  const f=frameSize(); const S=2;
+  const cv=document.createElement('canvas');
+  cv.width=f.w*S; cv.height=f.h*S;
+  const ctx=cv.getContext('2d'); ctx.scale(S,S);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,f.w,f.h);
+  const line='#5b6b7a', fillSoft='#e7ecf2', fillMid='#cfd9e3', textC='#3d4a5d';
+  ctx.font='12px "Microsoft YaHei",sans-serif'; ctx.textBaseline='middle';
+  const sorted=[...state.elements].sort((a,b)=>a.z-b.z);
+  for(const e of sorted){
+    const {x,y,w,h}=e;
+    ctx.save();
+    const label=(e.label||'').trim();
+    const center=(t,col=textC)=>{ctx.fillStyle=col;ctx.textAlign='center';
+      ctx.fillText(t.slice(0,24),x+w/2,Math.max(y+8,y+h/2),w-8);ctx.textAlign='left';};
+    const leftText=(t,col=textC)=>{ctx.fillStyle=col;ctx.fillText(t.slice(0,26),x+2,y+h/2,w-4);};
+    switch(e.type){
+      case 'navbar': case 'tabbar':
+        ctx.fillStyle='#3d4a5d'; ctx.fillRect(x,y,w,h);
+        ctx.fillStyle='#fff'; ctx.textAlign='center';
+        ctx.fillText((label||'导航').slice(0,20),x+w/2,y+h/2); ctx.textAlign='left'; break;
+      case 'button': case 'badge':
+        ctx.fillStyle='#4f6ef7'; roundRect(ctx,x,y,w,h,8); ctx.fill();
+        if(label)center(label,'#fff'); break;
+      case 'input': case 'select': case 'textarea':
+        ctx.fillStyle='#fbfcfe'; ctx.strokeStyle=line; roundRect(ctx,x,y,w,h,6); ctx.fill(); ctx.stroke();
+        if(label)leftText(label,'#93a1b3');
+        if(e.type==='select'){ctx.fillStyle='#93a1b3';ctx.fillText('▾',x+w-18,y+h/2);} break;
+      case 'image':
+        ctx.fillStyle='#edf1f6'; ctx.fillRect(x,y,w,h);
+        ctx.strokeStyle='#aebac9'; ctx.strokeRect(x,y,w,h);
+        ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+w,y+h); ctx.moveTo(x+w,y); ctx.lineTo(x,y+h); ctx.stroke();
+        if(label){ctx.fillStyle='#93a1b3';ctx.textAlign='center';ctx.fillText(label.slice(0,14),x+w/2,y+h-10,w-8);ctx.textAlign='left';}
+        break;
+      case 'card':
+        ctx.fillStyle='#fff'; ctx.strokeStyle='#8b98a9'; roundRect(ctx,x,y,w,h,8); ctx.fill(); ctx.stroke();
+        if(label){ctx.fillStyle=textC;ctx.font='bold 12px "Microsoft YaHei",sans-serif';
+          ctx.fillText(label.slice(0,16),x+8,y+14);ctx.font='12px "Microsoft YaHei",sans-serif';}
+        ctx.fillStyle=fillSoft; ctx.fillRect(x+8,y+28,w-16,7); ctx.fillRect(x+8,y+42,(w-16)*.6,7); break;
+      case 'container':
+        ctx.strokeStyle='#9fadc0'; ctx.setLineDash([6,4]); ctx.strokeRect(x,y,w,h); ctx.setLineDash([]);
+        if(label)leftText(label,'#8b98a9'); break;
+      case 'listitem':
+        ctx.fillStyle='#fff'; ctx.strokeStyle=line; roundRect(ctx,x,y,w,h,8); ctx.fill(); ctx.stroke();
+        ctx.fillStyle=fillMid; ctx.beginPath(); ctx.arc(x+22,y+h/2,11,0,7); ctx.fill();
+        ctx.fillStyle=fillSoft; ctx.fillRect(x+42,y+h/2-9,w-80,7); ctx.fillRect(x+42,y+h/2+3,(w-90)*.55,7); break;
+      case 'switch':
+        ctx.fillStyle=fillMid; roundRect(ctx,x,y,w,h,h/2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x+w-h/2+2,y+h/2,h/2-3,0,7); ctx.fill(); break;
+      case 'checkbox':
+        ctx.strokeStyle='#7f8fa3'; ctx.lineWidth=1.5; ctx.strokeRect(x,y+4,17,17); ctx.lineWidth=1;
+        if(label)leftText('  ✓ '+label,textC); break;
+      case 'tabs': {const items=(label||'标签一 标签二 标签三').split(/\s+/);
+        ctx.strokeStyle=line; ctx.beginPath(); ctx.moveTo(x,y+h); ctx.lineTo(x+w,y+h); ctx.stroke();
+        items.forEach((t,ix)=>{const tx=x+6+ix*(w/items.length);
+          ctx.fillStyle=ix===0?'#4f6ef7':'#8b98a9'; ctx.fillText(t.slice(0,8),tx,y+h/2);
+          if(ix===0){ctx.fillRect(tx,y+h-2,Math.min(w/items.length-8,ctx.measureText(t).width+8),2);}}); break;}
+      case 'table':
+        ctx.fillStyle='#fff'; ctx.strokeStyle=line; ctx.fillRect(x,y,w,h); ctx.strokeRect(x,y,w,h);
+        for(let i=1;i<4;i++){ctx.beginPath();ctx.moveTo(x,y+h*i/4);ctx.lineTo(x+w,y+h*i/4);ctx.stroke();}
+        for(let i=1;i<3;i++){ctx.beginPath();ctx.moveTo(x+w*i/3,y);ctx.lineTo(x+w*i/3,y+h);ctx.stroke();}
+        if(label){ctx.fillStyle='#8b98a9';ctx.fillText(label.slice(0,14),x+6,y+10);} break;
+      case 'chart':
+        ctx.fillStyle='#fbfcfe'; ctx.strokeStyle=line; roundRect(ctx,x,y,w,h,6); ctx.fill(); ctx.stroke();
+        {const bw=(w-40)/6; [0.4,0.62,0.5,0.8,0.58,0.72].forEach((r,i)=>{
+          ctx.fillStyle='#9fb4f0'; ctx.fillRect(x+14+i*(bw+4),y+h-12-(h-30)*r,bw,(h-30)*r);});}
+        if(label){ctx.fillStyle='#8b98a9';ctx.fillText(label.slice(0,16),x+6,y+10);} break;
+      case 'divider': ctx.strokeStyle=line; ctx.beginPath(); ctx.moveTo(x,y+1); ctx.lineTo(x+w,y+1); ctx.stroke(); break;
+      case 'progress':
+        ctx.strokeStyle=line; roundRect(ctx,x,y,w,h,h/2); ctx.stroke();
+        ctx.fillStyle='#4f6ef7'; roundRect(ctx,x+1,y+1,(w-2)*.62,h-2,(h-2)/2); ctx.fill(); break;
+      case 'avatar':
+        ctx.fillStyle=fillMid; ctx.beginPath(); ctx.arc(x+w/2,y+h/2,Math.min(w,h)/2,0,7); ctx.fill();
+        ctx.strokeStyle=line; ctx.stroke(); break;
+      case 'map':
+        ctx.fillStyle='#dfe8dc'; ctx.fillRect(x,y,w,h); ctx.strokeStyle=line; ctx.strokeRect(x,y,w,h);
+        ctx.fillStyle='#e5484d'; ctx.beginPath(); ctx.arc(x+w*.5,y+h*.45,4,0,7); ctx.fill(); break;
+      case 'joystick':
+        ctx.strokeStyle=line; ctx.beginPath(); ctx.arc(x+w/2,y+h/2,Math.min(w,h)/2,0,7); ctx.stroke();
+        ctx.fillStyle='#4f6ef7'; ctx.beginPath(); ctx.arc(x+w/2,y+h/2,Math.min(w,h)/5,0,7); ctx.fill(); break;
+      case 'hpbar': case 'partylist': case 'bosshbar':
+        ctx.fillStyle='rgba(15,20,30,.85)'; roundRect(ctx,x,y,w,h,6); ctx.fill();
+        ctx.strokeStyle=line; roundRect(ctx,x,y,w,h,6); ctx.stroke();
+        ctx.fillStyle='#e5484d'; ctx.fillRect(x+6,y+h*.55,(w-12)*.7,Math.max(4,h*.22));
+        ctx.fillStyle='#3a7bd5'; ctx.fillRect(x+6,y+h*.78,(w-12)*.45,Math.max(3,h*.14));
+        if(label){ctx.fillStyle='#e7eef7';ctx.fillText(label.slice(0,14),x+6,y+h*.3);} break;
+      case 'inventory':
+        ctx.fillStyle='rgba(15,20,30,.85)'; roundRect(ctx,x,y,w,h,6); ctx.fill();
+        ctx.strokeStyle=line; {const cw=w/6,ch2=h/2;
+        for(let i=0;i<12;i++){ctx.strokeRect(x+2+(i%6)*cw,y+2+Math.floor(i/6)*ch2,cw-2,ch2-2);}} break;
+      case 'crosshair':
+        ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(x+w/2,y); ctx.lineTo(x+w/2,y+h); ctx.moveTo(x,y+h/2); ctx.lineTo(x+w,y+h/2); ctx.stroke();
+        ctx.lineWidth=1; break;
+      case 'dmgnumber':
+        ctx.fillStyle='#ff5a5f'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center';
+        ctx.fillText('-47',x+w/2,y+h*.35); ctx.fillStyle='#7fe0b6'; ctx.font='10px sans-serif';
+        ctx.fillText('+12',x+w/2,y+h*.75); ctx.textAlign='left'; break;
+      case 'questtracker': case 'killfeed': case 'chatbox': case 'tutorialhint': case 'loadingbar': case 'pausemenu': case 'scoreboard': case 'currency': case 'buffbar': case 'cooldown':
+        ctx.fillStyle='rgba(15,20,30,.75)'; roundRect(ctx,x,y,w,h,6); ctx.fill();
+        ctx.strokeStyle=line; roundRect(ctx,x,y,w,h,6); ctx.stroke();
+        if(label){ctx.fillStyle='#dfe7f2';ctx.fillText(label.slice(0,18),x+6,y+h/2,w-12);} break;
+      case 'toast':
+        ctx.fillStyle='#2a3342'; roundRect(ctx,x,y,w,h,8); ctx.fill();
+        if(label)center(label,'#fff'); break;
+      case 'dialog':
+        ctx.fillStyle='#fff'; ctx.strokeStyle='#8b98a9'; roundRect(ctx,x,y,w,h,10); ctx.fill(); ctx.stroke();
+        if(label){ctx.fillStyle=textC;ctx.fillText(label.slice(0,16),x+8,y+12);} break;
+      case 'draw':
+        {const st=readStyle();
+        ctx.strokeStyle=st.stroke; ctx.lineWidth=st.strokeWidth; ctx.lineCap='round'; ctx.lineJoin='round';
+        ctx.setLineDash(DASH[st.dash]||[]);
+        for(const pts of (e.strokes||[])){
+          if(!pts.length)continue;
+          ctx.beginPath(); ctx.moveTo(x+pts[0].x,y+pts[0].y);
+          for(const p of pts.slice(1))ctx.lineTo(x+p.x,y+p.y);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]); ctx.lineWidth=1;}
+        break;
+      case 'icon': ctx.strokeStyle='#7f8fa3'; roundRect(ctx,x,y,w,h,7); ctx.stroke();
+        ctx.fillStyle='#8b98a9'; ctx.fillRect(x+w/2-5,y+h/2-5,10,10); break;
+      case 'heading': if(label)leftText(label,textC); break;
+      default: if(label)leftText(label);
+    }
+    ctx.restore();
+  }
+  return cv.toDataURL('image/png');
+}
+function roundRect(ctx,x,y,w,h,r){
+  r=Math.min(r,w/2,h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+
+/* ================= 收集与发送 ================= */
+function collectSketch(){
+  return {
+    projectName: $('projName').value.trim()||'未命名界面',
+    frameType: state.frameType,
+    frame: frameSize(),
+    template: currentTemplate,
+    stack: $('stackSel').value,
+    globalRequirements: $('globalReq').value,
+    style: readStyle(),
+    exportedAt: new Date().toISOString(),
+    elements: state.elements.map(e=>({
+      id:e.id,type:e.type,typeName:typeName(e.type),
+      x:Math.round(e.x),y:Math.round(e.y),w:Math.round(e.w),h:Math.round(e.h),
+      label:e.label||'',notes:e.notes||'',z:e.z,
+      ...(e.group?{group:e.group}:{}),
+      ...(e.type==='draw'&&e.strokes?{strokes:e.strokes}:{}),
+    })),
+  };
+}
+async function api(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
+  return j;
+}
+function setJobStatus(cls,text){const s=$('jobStatus');s.className=cls?s.className.replace(/run|done|fail/g,'')+cls:'';s.textContent=text;}
+function appendLog(kind,text){
+  const log=$('log');
+  const span=document.createElement('span');
+  span.className={
+    ai:'l-ai',tool:'l-tool',run:'l-run',error:'l-err',sys:'l-sys',out:'l-out',result:'l-result'
+  }[kind]||'l-out';
+  span.textContent=text+'\n';
+  log.appendChild(span); log.scrollTop=log.scrollHeight;
+}
+
+$('btnSend').onclick=async()=>{
+  if(!state.elements.length&&!$('globalReq').value.trim())
+    return toast('画布为空且未填写全局要求——先画点什么或写点要求吧');
+  try{
+    const body={
+      projectName:$('projName').value.trim()||'未命名界面',
+      targetDir:$('targetDir').value.trim(),
+      png:renderPng(), sketch:collectSketch(),
+      canvas:{w:frameSize().w,h:frameSize().h},
+    };
+    const res=await api('/api/generate',body);
+    currentJob={id:res.jobId,dir:res.targetDir};
+    lastJob={dir:res.targetDir,sessionId:null};
+    $('log').innerHTML='';
+    appendLog('sys',`已写入产物: ${res.files.join(', ')} → ${res.targetDir}`);
+    appendLog('sys','正在调用 ZCode 无头模式生成代码…（首次运行含插件/MCP 加载，可能需要 1-3 分钟）');
+    setJobStatus('run','运行中'); startElapsed();
+    $('btnStop').disabled=false; $('btnSend').disabled=true;
+    listenJob(res.jobId);
+  }catch(e){toast('发送失败: '+e.message);appendLog('error','发送失败: '+e.message);}
+};
+function listenJob(jobId){
+  const es=new EventSource(`/api/events?job=${encodeURIComponent(jobId)}`);
+  es.onmessage=(ev)=>{
+    let m; try{m=JSON.parse(ev.data);}catch{return;}
+    switch(m.t){
+      case 'start': appendLog('sys',`ZCode 进程已启动 (pid ${m.pid})，工作目录: ${m.cwd}`); break;
+      case 'ai': appendLog('ai',m.text); break;
+      case 'tool': appendLog('tool',`⚙ ${m.name}${m.input?' · '+m.input:''}`); break;
+      case 'run': appendLog('run',m.text); clearTick(); break;
+      case 'out': appendLog('out',m.text); clearTick(); break;
+      case 'sys': appendLog('sys',m.text); clearTick(); break;
+      case 'error': appendLog('error',m.text); clearTick(); break;
+      case 'tick':
+        upsertTick(`…引擎已静默 ${m.quiet}s，仍在运行（共 ${m.secs}s）——MCP 启动 30-60s、模型多轮读写文件期间无输出属正常`);
+        break;
+      case 'result':
+        if(m.sessionId)lastJob.sessionId=m.sessionId;
+        appendLog('result',`✔ 完成${m.turns!=null?`(${m.turns} 轮)`:''}${m.tokens?` · ${m.tokens}`:''}: ${m.text||''}`); break;
+      case 'shot':
+        showPreview(lastJob.dir);
+        appendLog('sys','已自动截图生成页（generated-preview.png），可用于「自动比对返修」。'); break;
+      case 'exit':
+        appendLog(m.code===0?'sys':'error',`进程退出 code=${m.code}，耗时 ${Math.round(m.secs/60*10)/10} 分钟`);
+        if(m.sessionId)lastJob.sessionId=m.sessionId;
+        if(m.code===0&&lastJob.dir){showPreview(lastJob.dir);}
+        setJobStatus(m.code===0?'done':'fail',m.code===0?'已完成':'失败');
+        stopElapsed(); clearTick(); es.close(); finishJobUi();
+        break;
+    }
+  };
+  es.onerror=()=>{/* SSE 断开由 exit 收尾 */};
+}
+function finishJobUi(){$('btnStop').disabled=true;$('btnSend').disabled=false;}
+
+/* ================= 日志区收起/展开 ================= */
+$('btnMinConsole').onclick=()=>{
+  const min=document.body.classList.toggle('console-min');
+  $('btnMinConsole').textContent=min?'展开 ⌃':'收起 ⌄';
+};
+/* ================= 顶栏收起/展开 ================= */
+$('btnMinTop').onclick=()=>{
+  const min=document.body.classList.toggle('topbar-min');
+  $('btnMinTop').textContent=min?'展开 ⌄':'收起 ⌃';
+};
+
+/* ================= 静默心跳显示 ================= */
+let tickEl=null;
+function upsertTick(text){
+  if(!tickEl||!tickEl.isConnected){
+    tickEl=document.createElement('span');
+    tickEl.className='l-run';
+    $('log').appendChild(tickEl);
+  }
+  tickEl.textContent=text+'\n';
+  $('log').scrollTop=$('log').scrollHeight;
+}
+function clearTick(){tickEl=null;}
+
+/* ================= 预览与修正 ================= */
+function showPreview(dir){
+  if(!dir)return;
+  document.body.classList.add('with-preview');
+  $('btnShowPreview').style.display='';
+  $('pvDir').textContent=dir;
+  $('pvFrame').src=`/preview?dir=${encodeURIComponent(dir)}&file=index.html&t=${Date.now()}`;
+}
+$('pvRefresh').onclick=()=>{ if(lastJob.dir)showPreview(lastJob.dir); };
+$('pvClose').onclick=()=>{ document.body.classList.remove('with-preview'); };
+$('btnShowPreview').onclick=()=>{ if(lastJob.dir)showPreview(lastJob.dir); };
+$('btnRefine').onclick=async()=>{
+  const feedback=$('refineText').value.trim();
+  const compare=$('refineCompare').checked;
+  if(!lastJob.dir)return toast('还没有已生成的项目');
+  if(!feedback&&!compare)return toast('请填写反馈，或勾选自动比对');
+  try{
+    const f=frameSize();
+    const res=await api('/api/refine',{
+      targetDir:lastJob.dir,sessionId:lastJob.sessionId,feedback,compare,
+      canvas:{w:f.w,h:f.h},
+    });
+    currentJob={id:res.jobId,dir:res.targetDir};
+    $('log').innerHTML='';
+    appendLog('sys',`修正任务已提交${lastJob.sessionId?'（续上次会话）':'（新会话）'} → ${res.targetDir}`);
+    setJobStatus('run','修正中'); startElapsed();
+    $('btnStop').disabled=false; $('btnSend').disabled=true;
+    listenJob(res.jobId);
+  }catch(e){toast('提交失败: '+e.message);appendLog('error','提交失败: '+e.message);}
+};
+
+/* ================= 复制提示词（接力到任意 ZCode 对话） ================= */
+$('btnCopyPrompt').onclick=async()=>{
+  if(!state.elements.length&&!$('globalReq').value.trim())return toast('画布为空且未填写全局要求');
+  const dir=$('targetDir').value.trim()||('projects/'+($('projName').value.trim()||'未命名界面'));
+  const prompt=[
+    `请阅读当前目录下的 REQUIREMENTS.md、sketch.json 与 sketch.png（先后执行：cd "${dir}"）。`,
+    'sketch.json 是元素坐标/类型/标注的结构化真相来源，sketch.png 是视觉参考，REQUIREMENTS.md 含全局要求、全局样式参数、元素清单与任务说明。',
+    `请按这些要求实现该界面的 UI 代码，技术栈：${$('stackSel').value}。`,
+    '严格遵守 REQUIREMENTS.md 第三节的全局样式参数（线条粗细/线型/颜色/形状风格等）。元素标注逐条落实。',
+    '将代码文件直接写入该目录，并在最后简要说明生成了哪些文件。',
+  ].join('\n');
+  try{ await navigator.clipboard.writeText(prompt); toast('提示词已复制——到任意 ZCode 对话粘贴发送即可（先「仅导出草图」更新文件）'); }
+  catch(e){ toast('复制失败：'+e.message); }
+};
+
+/* ================= .uisketch 单文件导出/导入 ================= */
+function buildUisketch(){
+  const sk=collectSketch();
+  return {
+    _format:{
+      type:'uisketch', version:1,
+      说明:'UI 草图规格文件——读取本文件即可完整还原用户对界面的需求。字段含义：',
+      frame:'画布尺寸(w×h,像素)与类型；elements 的 x/y/w/h 为相对画布左上角的像素坐标',
+      style:'全局样式参数：strokeWidth线条粗细px / dash线型(solid实线|dashed虚线|dotted点线) / stroke描边色 / fill填充色 / primary主色调 / corner形状风格(sharp直角|round圆角|large大圆角|pill胶囊) / extra附加要求——生成 UI 时必须逐项遵守',
+      'elements[].type':'控件类型 id',
+      'elements[].label':'元素显示文字（按钮文字/占位符/标题等）',
+      'elements[].notes':'该元素的用途与要求——必须逐条落实到交互/状态/跳转/校验',
+      'elements[].strokes':'手绘笔画点序列（元素局部坐标），结合位置与形状理解语义（框选区域/箭头/示意图形）',
+      'elements[].group':'组合标记：相同 group 值的元素为用户手动组合的逻辑组，实现时视为关联整体（如一组按钮/一个卡片及内容）',
+      'elements[].z':'层级，小值在下大值在上',
+      globalRequirements:'页面级全局需求（用途/风格/整体行为）',
+      stack:'目标技术栈',
+      template:'来源模板名（仅供参考）',
+    },
+    ...sk,
+  };
+}
+$('btnUisketch').onclick=async()=>{
+  const content=JSON.stringify(buildUisketch(),null,2);
+  const name=($('projName').value.trim()||'未命名界面')+'.uisketch';
+  // 浏览器下载一份
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type:'application/json'}));
+  a.download=name; a.click(); URL.revokeObjectURL(a.href);
+  // 同时落盘到输出目录（服务端）
+  try{
+    const body={projectName:$('projName').value.trim()||'未命名界面',targetDir:$('targetDir').value.trim(),content};
+    const res=await api('/api/export-uisketch',body);
+    appendLog('sys',`.uisketch 已保存: ${res.path}`);
+  }catch(e){ appendLog('run','落盘失败（浏览器下载已成功）: '+e.message); }
+  toast('已导出 '+name+'——把文件发进任意 ZCode 对话即可还原需求');
+};
+$('btnOpenUisketch').onclick=()=>$('uisketchFile').click();
+$('uisketchFile').onchange=async()=>{
+  const file=$('uisketchFile').files[0]; if(!file)return;
+  try{
+    const doc=JSON.parse(await file.text());
+    if(doc._format&&doc._format.type!=='uisketch')throw new Error('不是 uisketch 文件');
+    pushHistory();
+    if(doc.projectName)$('projName').value=doc.projectName;
+    if(doc.stack)$('stackSel').value=doc.stack;
+    if(typeof doc.globalRequirements==='string')$('globalReq').value=doc.globalRequirements;
+    if(doc.style){
+      state.style={...state.style,...doc.style};
+      $('stWidth').value=state.style.strokeWidth; $('stDash').value=state.style.dash;
+      $('stStroke').value=state.style.stroke; $('stFill').value=state.style.fill;
+      $('stPrimary').value=state.style.primary; $('stCorner').value=state.style.corner;
+      $('stExtra').value=state.style.extra||'';
+    }
+    if(doc.frameType&&FRAMES[doc.frameType]){state.frameType=doc.frameType;$('frameSel').value=doc.frameType;}
+    if(doc.frame){state.customW=doc.frame.w;state.customH=doc.frame.h;}
+    state.elements=[];state.nextId=1;state.selectedId=null;state.selectedIds=[];
+    for(const e of (doc.elements||[])){
+      if(!TYPES[e.type])continue;
+      state.elements.push({id:e.id||('e'+(state.nextId++)),type:e.type,
+        x:+e.x||0,y:+e.y||0,w:Math.max(10,+e.w||40),h:Math.max(2,+e.h||20),
+        label:e.label||'',notes:e.notes||'',z:+e.z||state.elements.length+1,
+        ...(e.group?{group:e.group}:{}),
+        ...(e.strokes?{strokes:e.strokes}:{})});
+      state.nextId=Math.max(state.nextId,parseInt((e.id||'e0').slice(1))+1||state.nextId);
+    }
+    followFrameWidth();
+    invalidateRect(); setZoom(state.frameType.includes('land')||state.frameType==='desktop'?0.6:1);
+    renderAll();
+    toast(`已还原 ${state.elements.length} 个元素${doc.style?' 与样式参数':''}`);
+  }catch(e){toast('打开失败: '+e.message);}
+  $('uisketchFile').value='';
+};
+
+/* ================= 图片导入解析 ================= */
+$('btnImportImg').onclick=()=>$('imgFile').click();
+$('imgFile').onchange=async()=>{
+  const file=$('imgFile').files[0];
+  if(!file)return;
+  const hint=$('importHint');
+  hint.textContent='读取图片…';
+  const dataUrl=await new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file);
+  });
+  const dims=await new Promise((res)=>{
+    const img=new Image();
+    img.onload=()=>res({w:img.naturalWidth,h:img.naturalHeight});
+    img.onerror=()=>res({w:0,h:0});
+    img.src=dataUrl;
+  });
+  hint.textContent='视觉模型解析中…（约 1-2 分钟）';
+  try{
+    const r=await api('/api/import-image',{dataUrl,width:dims.w,height:dims.h});
+    if(!r.elements||!r.elements.length){hint.textContent='未解析出元素';return toast('未解析出可用的 UI 元素');}
+    const f=frameSize();
+    const sx=f.w/(r.width||dims.w||f.w), sy=f.h/(r.height||dims.h||f.h);
+    pushHistory();
+    state.elements=[]; state.nextId=1; state.selectedId=null; state.selectedIds=[];
+    for(const e of r.elements){
+      const t=TYPES[e.type]?e.type:'text';
+      const el={id:'e'+(state.nextId++),type:t,
+        x:Math.max(0,Math.round(e.x*sx)),y:Math.max(0,Math.round(e.y*sy)),
+        w:Math.max(12,Math.round(e.w*sx)),h:Math.max(4,Math.round(e.h*sy)),
+        label:e.label||'',notes:'',z:state.elements.length+1};
+      if(t==='navbar'||t==='tabbar')el.w=f.w;
+      state.elements.push(el);
+    }
+    renderAll();
+    hint.textContent=`已导入 ${state.elements.length} 个元素（按 ${(sx*100).toFixed(0)}% 比例映射到画布）`;
+    toast(`图片解析完成：导入 ${state.elements.length} 个元素，可逐个补充标注后再生成`);
+  }catch(e){hint.textContent='解析失败';toast('解析失败: '+e.message);}
+  $('imgFile').value='';
+};
+function startElapsed(){
+  const t0=Date.now();
+  jobTimer=setInterval(()=>{$('jobElapsed').textContent=Math.round((Date.now()-t0)/1000)+'s';},1000);
+}
+function stopElapsed(){clearInterval(jobTimer);jobTimer=null;}
+
+$('btnStop').onclick=async()=>{
+  if(!currentJob)return;
+  try{await api('/api/stop',{jobId:currentJob.id});toast('已请求停止');}catch(e){toast('停止失败: '+e.message);}
+};
+$('btnExport').onclick=async()=>{
+  try{
+    const body={
+      projectName:$('projName').value.trim()||'未命名界面',
+      targetDir:$('targetDir').value.trim(),
+      png:renderPng(), sketch:collectSketch(),
+    };
+    const res=await api('/api/export-only',body);
+    appendLog('sys',`草图已导出: ${res.files.join(', ')} → ${res.targetDir}`);
+    toast('草图已导出（未调用 ZCode）');
+  }catch(e){toast('导出失败: '+e.message);}
+};
+$('btnOpenDir').onclick=async()=>{
+  let dir=currentJob&&currentJob.dir;
+  if(!dir){const name=$('projName').value.trim()||'未命名界面';dir='projects/'+name;}
+  try{await api('/api/open-folder',{targetDir:dir});}catch(e){toast('打开失败: '+e.message);}
+};
+
+/* ================= 初始化 ================= */
+(async function init(){
+  try{
+    const cfg=await (await fetch('/api/config')).json();
+    const es=$('engineState');
+    if(cfg.engineFound){es.textContent='ZCode 引擎 ✓ '+cfg.model;es.className='ok';}
+    else{es.textContent='未找到 ZCode 引擎';es.className='bad';}
+  }catch{ $('engineState').textContent='服务未连接';$('engineState').className='bad'; }
+  applyTemplate('手机 · 登录页');
+  state.history.length=0; // 模板初始化不算历史
+  setZoom(state.frameType==='desktop'?0.6:1);
+  window.addEventListener('resize',()=>{invalidateRect();});
+  $('canvasArea').addEventListener('scroll',()=>{invalidateRect();});
+  // 自动载入（?open=<.uisketch 绝对路径>）：AI 生成草图后自动打开编辑器直载画布
+  const openQs=new URLSearchParams(location.search).get('open');
+  if(openQs){
+    (async()=>{
+      try{
+        const j=await(await fetch('/api/open-uisketch?file='+encodeURIComponent(openQs))).json();
+        if(!j.ok){toast('载入草图失败：'+j.error);return;}
+        const file=new File([JSON.stringify(j.doc)],'sketch.uisketch',{type:'application/json'});
+        const dt=new DataTransfer();dt.items.add(file);
+        const input=document.getElementById('uisketchFile');
+        input.files=dt.files;input.dispatchEvent(new Event('change'));
+        toast('已载入草图：'+(j.doc.projectName||''));
+      }catch(e){toast('载入草图失败：'+e.message);}
+    })();
+  }
+})();
+</script>
+</body>
+</html>
