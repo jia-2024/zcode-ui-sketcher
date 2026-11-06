@@ -10,7 +10,7 @@
 > 别的工具把截图丢给视觉模型，赌它猜得对；
 > 这个工具把界面"拆开"交给 AI，每一块都在说人话。
 
-![编辑器总览](docs/screenshots/main.png)/>
+![编辑器总览](docs/screenshots/main.png)
 
 
 ## 为什么会有这个工具（作者自述）
